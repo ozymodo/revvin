@@ -9,6 +9,14 @@ extends RigidBody3D
 ## pull in behind one.
 ##
 ## Subclasses override _build() (shape + model) and _think(delta).
+##
+## Breakable parts (add_part in _build): legs, wheels, wings, armour. Each
+## has its own health, a share of the enemy's; a hit lands on the part
+## nearest to where it struck. At half health a part is knocked askew, at
+## zero it tears off and tumbles away as a physics chunk carrying the
+## enemy's motion (world/debris.gd). The machine fights on without it:
+## _part_lost() is where a subclass changes how it moves and attacks.
+## Stumps spit sparks, and a badly hurt machine smokes.
 
 const Models := preload("res://scripts/enemies/enemy_models.gd")
 const LAYER := 4                    # physics layer 3
@@ -59,6 +67,13 @@ var chill := 0.0                    # > 0: frozen by the cryo spiker (slowed, ti
 var boss := false                   # a beast boss (enemies/boss.gd): never recycled
 var ai := true                     # false: a test dummy (physics only, no steering or attacks)
 var unseen := 0.0                   # s the car hasn't been able to see this one (recycling)
+var parts: Array = []               # {node, tag, share, hp, centre (in the node's space), loose}
+var part_mult := 1.0                # parts take this times the damage (big machines with many parts)
+
+var _lost := {}                     # tag -> how many have come off
+var _stumps: Array = []             # [where it hung, in visual space, tag]
+var _spark_t := 0.0
+var _smoke: GPUParticles3D
 
 static var _bar_mat: ShaderMaterial
 static var _flash_mat: StandardMaterial3D
@@ -75,9 +90,12 @@ func _ready() -> void:
 	body_entered.connect(_on_body_entered)
 	hp = max_hp
 	_build()
-	visual.scale = Vector3.ONE * 0.01
 	for mi in visual.find_children("*", "MeshInstance3D", true, false):
 		_flash_meshes.append(mi)
+	for p in parts:
+		p.hp = max_hp * p.share
+		p.centre = _local_centre(p.node)
+	visual.scale = Vector3.ONE * 0.01
 	_make_bar()
 
 
@@ -89,6 +107,118 @@ func _build() -> void:
 ## Override: steering, attacks.
 func _think(_delta: float) -> void:
 	pass
+
+
+## Override: part `node` (tagged `tag`) has just come off. Drop any
+## references to it; the node is about to leave the enemy.
+func _part_lost(_tag: String, _node: Node3D) -> void:
+	pass
+
+
+## Override: how fast a part that's a wheel is spinning about its local X
+## (rad/s), so it rolls on when it comes off.
+func _wheel_spin(_node: Node3D) -> float:
+	return 0.0
+
+
+## A breakable part: `share` of max_hp breaks it off.
+func add_part(node: Node3D, tag: String, share: float) -> void:
+	parts.append({"node": node, "tag": tag, "share": share, "hp": 0.0, "centre": Vector3.ZERO, "loose": false})
+
+
+## How many parts tagged `tag` have come off.
+func lost(tag: String) -> int:
+	return _lost.get(tag, 0)
+
+
+## The middle of a part's meshes, in its own space.
+func _local_centre(node: Node3D) -> Vector3:
+	var inv := node.global_transform.affine_inverse()
+	var box := AABB()
+	var first := true
+	for mi in _meshes_of(node):
+		var a: AABB = (inv * mi.global_transform) * mi.get_aabb()
+		box = a if first else box.merge(a)
+		first = false
+	return box.get_center()
+
+
+func _meshes_of(node: Node3D) -> Array:
+	var out: Array = node.find_children("*", "GeometryInstance3D", true, false)
+	if node is GeometryInstance3D:
+		out.append(node)
+	return out
+
+
+## Which part a hit at `at` lands on (null: the body took it). A hit with
+## no real position (beams, hitscan aimed at the middle) lands anywhere.
+func _part_at(at: Vector3) -> Variant:
+	if parts.is_empty():
+		return null
+	if at == Vector3.INF or at.distance_to(global_position) < radius * 0.3:
+		return parts.pick_random()
+	var best: Variant = null
+	var bd := INF
+	for p in parts:
+		var d: float = ((p.node as Node3D).global_transform * (p.centre as Vector3)).distance_to(at)
+		if d < bd:
+			bd = d
+			best = p
+	return best if bd < radius + 1.0 else null
+
+
+## Knocked askew: bent and hanging off at an angle.
+func _loosen(p: Dictionary) -> void:
+	p.loose = true
+	var node: Node3D = p.node
+	var k := 0.2 if p.tag == "wheel" else 0.3
+	node.rotation += Vector3(randf_range(-1, 1), randf_range(-0.5, 0.5), randf_range(-1, 1)) * k
+	if p.tag != "wheel":
+		node.position += Vector3(randf_range(-1, 1), randf_range(-1, 0.3), randf_range(-1, 1)) * 0.04 * radius
+	var at := node.global_transform * (p.centre as Vector3)
+	if Lod.near(at, 90.0):
+		combat.fx.sparks(at, Color(1.0, 0.65, 0.3), 0.25, (at - global_position).normalized())
+
+
+## Tears a part off. `kick` scales how hard it's thrown.
+func break_part(p: Dictionary, at := Vector3.INF, kick := 1.0) -> void:
+	if not parts.has(p):
+		return
+	parts.erase(p)
+	_lost[p.tag] = lost(p.tag) + 1
+	var node: Node3D = p.node
+	var pos := node.global_transform * (p.centre as Vector3)
+	_stumps.append([visual.to_local(node.global_position), p.tag])
+	for mi in _meshes_of(node):
+		if mi is MeshInstance3D:
+			_flash_meshes.erase(mi)
+		(mi as GeometryInstance3D).material_overlay = null
+	var wheel: bool = p.tag == "wheel"
+	var spin_rate := _wheel_spin(node) if wheel else 0.0
+	_part_lost(p.tag, node)
+	# It carries on with the enemy's motion, kicked away from the hit.
+	var r := pos - global_position
+	var vel := linear_velocity + angular_velocity.cross(r)
+	var away := pos - at if at != Vector3.INF and pos.distance_to(at) > 0.1 else r
+	away = (away.normalized() + r.normalized() * 0.6 + Vector3.UP * 0.7).normalized()
+	vel += away * randf_range(3.0, 7.0) * kick
+	var spin := angular_velocity + Vector3(randf_range(-1, 1), randf_range(-1, 1), randf_range(-1, 1)) * 5.0 * kick
+	if wheel:
+		spin = node.global_basis.x.normalized() * spin_rate + spin * 0.15
+	var debris: Node = combat.wrecking.debris if combat.wrecking else null
+	if debris and Lod.near(pos, 160.0):
+		debris.chunk(node, vel, spin, wheel)
+	else:
+		node.queue_free()
+	combat.part_broken(self, pos, p.tag, vel)
+
+
+## Dying: what's left comes apart.
+func shatter(at: Vector3, most := 4) -> void:
+	var left := parts.duplicate()
+	left.shuffle()
+	for i in mini(most, left.size()):
+		break_part(left[i], at, 1.8)
 
 
 func _physics_process(delta: float) -> void:
@@ -123,12 +253,35 @@ func _process(delta: float) -> void:
 	elif chill <= 0.0 and _flash_meshes.size() > 0 and _flash_meshes[0].material_overlay == _chill_mat:
 		for mi in _flash_meshes:
 			mi.material_overlay = null
+	_damaged(delta)
 	_bar_show -= delta
 	_bar.visible = _bar_show > 0.0 and not dead
 	if _bar.visible:
 		_bar.global_position = global_position + Vector3.UP * (radius + 0.6)
 		_bar.set_instance_shader_parameter("frac", clampf(hp / max_hp, 0.0, 1.0))
 		_bar.set_instance_shader_parameter("alpha", clampf(_bar_show, 0.0, 1.0))
+
+
+## Sparks spitting from the stumps; smoke once it's badly hurt.
+func _damaged(delta: float) -> void:
+	if dead:
+		return
+	if _smoke == null and hp < max_hp * 0.45 and Lod.near(global_position, 120.0):
+		_smoke = combat._smoke_trail(clampf(radius * 0.7, 0.6, 3.0))
+		add_child(_smoke)
+		_smoke.position = Vector3.UP * radius * 0.6
+		_smoke.emitting = true
+	if _stumps.is_empty():
+		return
+	_spark_t -= delta
+	if _spark_t > 0.0:
+		return
+	var s: Array = _stumps.pick_random()
+	var at := visual.to_global(s[0])
+	var near := Lod.near(at, 70.0)
+	_spark_t = randf_range(0.3, 1.0) * (1.0 if near else 4.0)
+	if near:
+		combat.fx.sparks(at, Color(1.0, 0.6, 0.25), clampf(0.12 * radius, 0.1, 0.4), (at - global_position).normalized())
 
 
 func _make_bar() -> void:
@@ -157,10 +310,20 @@ func _make_bar() -> void:
 	add_child(_bar)
 
 
-## Damage from the ray gun, a ram or a splash. Returns true if it killed.
-func take_damage(amount: float, how: String) -> bool:
+## Damage from the ray gun, a ram or a splash, landing at `at` (INF: no
+## particular spot). Returns true if it killed.
+func take_damage(amount: float, how: String, at := Vector3.INF) -> bool:
 	if dead:
 		return false
+	# Every armour plate gone leaves more of the insides open.
+	amount *= 1.0 + 0.05 * minf(lost("plate"), 6)
+	var p: Variant = _part_at(at)
+	if p != null:
+		p.hp -= amount * part_mult
+		if not p.loose and p.hp < max_hp * p.share * 0.5:
+			_loosen(p)
+		if p.hp <= 0.0:
+			break_part(p, at)
 	hp -= amount
 	_bar_show = 3.0
 	_flash = 0.08

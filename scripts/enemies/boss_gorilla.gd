@@ -4,8 +4,11 @@ extends "res://scripts/enemies/boss.gd"
 ##   slam    leaps at the car and pounds the ground on landing (shockwave)
 ##   throw   rips out a chunk of the city and hurls it
 ##   rage    beats its chest and roars: faster and angrier for a while
+## It can lose its wheels, its arms (one arm left: it swipes with that one;
+## none: no swipes or throws, it leaps and slams instead), its jaw and its
+## armour.
 
-var _arms: Array[Node3D] = []
+var _arms: Array = []               # [left, right]; null once torn off
 var _rage := 0.0
 
 
@@ -20,17 +23,36 @@ func _build() -> void:
 	sweep_r = 4.0
 	for n in ["Arm_L", "Arm_R"]:
 		_arms.append(visual.get_node(n))
+		add_part(_arms[-1], "arm", 0.16)
+	for w in _wheels:
+		add_drive(w, "wheel", 0.09)
+	add_parts("Fender_", "plate", 0.03)
+	add_parts("Exhaust_", "plate", 0.025)
+	add_part(visual.get_node("Back"), "plate", 0.05)
+	add_part(visual.get_node("Chest"), "plate", 0.06)
+	add_part(_jaw, "jaw", 0.06)
+
+
+func _part_lost(tag: String, node: Node3D) -> void:
+	super(tag, node)
+	var i := _arms.find(node)
+	if i >= 0:
+		_arms[i] = null
+
+
+func _armed() -> bool:
+	return _arms.any(func(a) -> bool: return a != null)
 
 
 func _choose_attack(d: float) -> String:
 	if _rage <= 0.0 and randf() < 0.18:
 		return "rage"
 	if d < 11.0:
-		return "swipe"
+		return "swipe" if _armed() else "slam"
 	if d < 50.0 and randf() < 0.55:
 		return "slam"
 	if d < 95.0:
-		return "throw" if randf() < 0.6 else "slam"
+		return "throw" if randf() < 0.6 and _armed() else "slam"
 	return ""
 
 
@@ -90,13 +112,16 @@ func _boulder_hit(at: Vector3) -> void:
 
 func _animate_extra(delta: float) -> void:
 	var spd := Vector2(linear_velocity.x, linear_velocity.z).length()
+	var striker := 0 if _arms[0] != null else 1         # swipes with whichever arm it has
 	for i in _arms.size():
-		var arm := _arms[i]
+		var arm: Node3D = _arms[i]
+		if arm == null:
+			continue
 		var sgn := 1.0 if i == 0 else -1.0
 		var want := sin(_t * (2.0 + spd * 0.25) + i * PI) * clampf(spd / 10.0, 0.0, 0.5)
 		match _attack:
 			"swipe":
-				want = -1.4 + clampf((_attack_t - 0.35) * 8.0, 0.0, 2.2) if i == 0 else 0.2
+				want = -1.4 + clampf((_attack_t - 0.35) * 8.0, 0.0, 2.2) if i == striker else 0.2
 			"throw":
 				want = -2.4 + clampf((_attack_t - 0.6) * 10.0, 0.0, 2.6)
 			"rage":

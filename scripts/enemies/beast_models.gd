@@ -12,6 +12,9 @@ extends RefCounted
 ##
 ## Named pivots the scripts animate: Leg_* (legs), Arm_L/R, Head, Jaw,
 ## Tail, Trunk, Ear_L/R, Core (the glowing heart, flashes on attacks).
+## Pieces the bosses can lose: Fender_*, Back*, Chest, Exhaust_*, Dorsal_*,
+## SkullPlate, Band_*, Fang_*, Tusk_* (plus the wheels, legs, arms, tail,
+## jaw, ears and trunk above).
 
 ## Boss accent colours (veins, eyes, cores).
 const ACCENT := {
@@ -259,19 +262,20 @@ static func _mech_gorilla(root: Node3D) -> void:
 	for sx in [-1.0, 1.0]:
 		for sz in [-1.0, 1.0]:
 			wheel(root, "Wheel_%d%d" % [int(sx), int(sz)], Vector3(sx * 2.25, 1.35, 0.3 + sz * 1.85), 1.35, 1.1, k)
-			part(root, _box(Vector3(1.3, 0.25, 2.2)), PLATE(), Vector3(sx * 2.25, 2.85, 0.3 + sz * 1.85), Vector3(0, 0, sx * 0.15))   # fenders
+			part(root, _box(Vector3(1.3, 0.25, 2.2)), PLATE(), Vector3(sx * 2.25, 2.85, 0.3 + sz * 1.85), Vector3(0, 0, sx * 0.15)).name = "Fender_%d%d" % [int(sx), int(sz)]
 	# Torso: dark fibre muscle with plate armour, a silver saddle and a core.
 	part(root, _sphere(1.0), fur, Vector3(0, 4.0, 0.0), Vector3(0.35, 0, 0), Vector3(2.3, 2.1, 1.9))
-	part(root, _box(Vector3(2.6, 0.5, 2.0)), PLATE(), Vector3(0, 5.3, 0.8), Vector3(0.4, 0, 0))     # silver back
-	part(root, _box(Vector3(2.4, 1.6, 0.4)), ARMOR(), Vector3(0, 3.9, -1.75), Vector3(-0.2, 0, 0))   # chest plate
+	part(root, _box(Vector3(2.6, 0.5, 2.0)), PLATE(), Vector3(0, 5.3, 0.8), Vector3(0.4, 0, 0)).name = "Back"      # silver back
+	part(root, _box(Vector3(2.4, 1.6, 0.4)), ARMOR(), Vector3(0, 3.9, -1.75), Vector3(-0.2, 0, 0)).name = "Chest"  # chest plate
 	var core := part(root, _sphere(0.45), GLOW(k, 5.0), Vector3(0, 4.0, -1.95))
 	core.name = "Core"
 	for i in 4:
 		part(root, _box(Vector3(2.2 - i * 0.3, 0.06, 0.05)), GLOW(k, 3.0), Vector3(0, 4.6 - i * 0.35, -1.98), Vector3(-0.2, 0, 0))  # ribs
 	moss(root, Vector3(0, 5.5, 0.7), 1.3, 9, 11)
 	for sx in [-1.0, 1.0]:
-		part(root, _cyl(0.22, 0.28, 1.6), CHROME(), Vector3(sx * 0.9, 6.0, 1.6), Vector3(-0.2, 0, 0))     # exhaust stacks
-		part(root, _cyl(0.24, 0.24, 0.12), GLOW(k, 6.0), Vector3(sx * 0.9, 6.8, 1.75), Vector3(-0.2, 0, 0))
+		var stack := pivot(root, "Exhaust_" + ("L" if sx < 0 else "R"), Vector3(sx * 0.9, 6.0, 1.6))
+		part(stack, _cyl(0.22, 0.28, 1.6), CHROME(), Vector3.ZERO, Vector3(-0.2, 0, 0))     # exhaust stacks
+		part(stack, _cyl(0.24, 0.24, 0.12), GLOW(k, 6.0), Vector3(0, 0.8, 0.15), Vector3(-0.2, 0, 0))
 	# Head: thrust forward between the shoulders, a heavy armoured brow
 	# over glowing eyes, a big plated muzzle.
 	var head := pivot(root, "Head", Vector3(0, 5.5, -2.0))
@@ -309,13 +313,14 @@ static func _mech_rex(root: Node3D) -> void:
 	var core := part(root, _sphere(0.5), GLOW(k, 5.0), Vector3(0, 3.5, -1.9))
 	core.name = "Core"
 	for i in 7:                                                                                      # dorsal plates
-		part(root, _box(Vector3(0.12, 0.9 - absf(i - 3) * 0.12, 0.7)), GLOW(k, 2.5), Vector3(0, 6.3 - absf(i - 3) * 0.15, -1.2 + i * 0.7), Vector3(0, 0, 0))
+		part(root, _box(Vector3(0.12, 0.9 - absf(i - 3) * 0.12, 0.7)), GLOW(k, 2.5), Vector3(0, 6.3 - absf(i - 3) * 0.15, -1.2 + i * 0.7), Vector3(0, 0, 0)).name = "Dorsal_%d" % i
 	moss(root, Vector3(0, 5.6, 1.4), 1.2, 7, 31)
 	for sx in [-1.0, 1.0]:
 		strut(root, Vector3(sx * 1.4, 4.3, 0.6), Vector3(sx * 2.0, 2.2, 0.9), 1.1, PLATE())           # thighs
 		wheel(root, "Wheel_" + ("L" if sx < 0 else "R"), Vector3(sx * 2.15, 2.1, 0.9), 2.1, 1.3, k)
-		part(root, _cyl(0.08, 0.12, 1.2), ARMOR(), Vector3(sx * 0.8, 3.7, -2.4), Vector3(1.0, 0, 0))   # tiny arms
-		part(root, _box(Vector3(0.1, 0.1, 0.4)), CHROME(), Vector3(sx * 0.8, 3.2, -2.95), Vector3(0.4, 0, 0))
+		var arm := pivot(root, "Arm_" + ("L" if sx < 0 else "R"), Vector3(sx * 0.8, 3.7, -2.4))
+		part(arm, _cyl(0.08, 0.12, 1.2), ARMOR(), Vector3.ZERO, Vector3(1.0, 0, 0))   # tiny arms
+		part(arm, _box(Vector3(0.1, 0.1, 0.4)), CHROME(), Vector3(0, -0.5, -0.55), Vector3(0.4, 0, 0))
 	var tail := pivot(root, "Tail", Vector3(0, 4.4, 3.4))
 	strut(tail, Vector3.ZERO, Vector3(0, -0.8, 2.8), 1.4, ARMOR())
 	strut(tail, Vector3(0, -0.8, 2.8), Vector3(0, -2.2, 5.6), 0.9, hide)
@@ -326,7 +331,7 @@ static func _mech_rex(root: Node3D) -> void:
 	var head := pivot(root, "Head", Vector3(0, 6.0, -2.8))
 	strut(root, Vector3(0, 5.0, -1.6), Vector3(0, 6.0, -2.8), 1.3, hide)
 	part(head, _box(Vector3(1.8, 1.4, 3.0)), ARMOR(), Vector3(0, 0.2, -1.2))
-	part(head, _box(Vector3(1.85, 0.3, 2.2)), PLATE(), Vector3(0, 0.95, -1.4))                      # skull plate
+	part(head, _box(Vector3(1.85, 0.3, 2.2)), PLATE(), Vector3(0, 0.95, -1.4)).name = "SkullPlate"
 	part(head, _box(Vector3(1.35, 1.0, 1.1)), ARMOR(), Vector3(0, 0.05, -3.1))                      # snout
 	part(head, _box(Vector3(1.0, 0.08, 0.06)), GLOW(k, 5.0), Vector3(0, 0.35, -3.66))                  # nostril vent
 	head.rotation.x = -0.12
@@ -354,7 +359,7 @@ static func _mech_spider(root: Node3D) -> void:
 	core.name = "Core"
 	part(root, _box(Vector3(0.5, 0.13, 0.5)), GLOW(k, 6.0), Vector3(0, 6.3, 2.4), Vector3(0.2, PI * 0.25, 0))
 	for i in 6:                                                                                      # armour bands
-		part(root, _torus(2.4 - absf(i - 2.5) * 0.35, 2.6 - absf(i - 2.5) * 0.35), PLATE(), Vector3(0, 4.0, 1.2 + i * 0.55), Vector3(PI * 0.5 + 0.2, 0, 0), Vector3(1.0, 1.0, 0.75))
+		part(root, _torus(2.4 - absf(i - 2.5) * 0.35, 2.6 - absf(i - 2.5) * 0.35), PLATE(), Vector3(0, 4.0, 1.2 + i * 0.55), Vector3(PI * 0.5 + 0.2, 0, 0), Vector3(1.0, 1.0, 0.75)).name = "Band_%d" % i
 	moss(root, Vector3(0, 5.6, 3.6), 1.1, 6, 41)
 	var head := pivot(root, "Head", Vector3(0, 3.3, -3.0))
 	for i in 8:
@@ -363,8 +368,9 @@ static func _mech_spider(root: Node3D) -> void:
 		part(head, _sphere(0.16 + (0.1 if row == 0 and (col == 1 or col == 2) else 0.0)), GLOW(k, 7.0), Vector3((col - 1.5) * 0.42, 0.45 - row * 0.35, -0.1))
 	var jaw := pivot(head, "Jaw", Vector3(0, -0.4, -0.1))
 	for sx in [-1.0, 1.0]:
-		part(jaw, _cyl(0.0, 0.22, 1.2, 6), CHROME(), Vector3(sx * 0.45, -0.5, -0.2), Vector3(PI - 0.3, 0, sx * 0.2))   # fangs
-		part(jaw, _sphere(0.12), mat(Color(0.4, 1.0, 0.3), 0.0, 0.2, 4.0), Vector3(sx * 0.45, -1.05, -0.38))          # venom drops
+		var fang := pivot(jaw, "Fang_" + ("L" if sx < 0 else "R"), Vector3(sx * 0.45, -0.5, -0.2))
+		part(fang, _cyl(0.0, 0.22, 1.2, 6), CHROME(), Vector3.ZERO, Vector3(PI - 0.3, 0, sx * 0.2))   # fangs
+		part(fang, _sphere(0.12), mat(Color(0.4, 1.0, 0.3), 0.0, 0.2, 4.0), Vector3(0, -0.55, -0.18))          # venom drops
 		for i in 4:
 			var z := -2.2 + i * 0.95
 			var leg := pivot(root, "Leg_%d%s" % [i, "L" if sx < 0 else "R"], Vector3(sx * 1.6, 3.2, z))
@@ -386,8 +392,9 @@ static func _mech_elephant(root: Node3D) -> void:
 	part(root, _box(Vector3(5.6, 1.4, 8.0)), ARMOR(), Vector3(0, 2.4, 0.5))                          # chassis
 	part(root, _box(Vector3(5.0, 0.12, 7.6)), GLOW(k, 2.5), Vector3(0, 1.66, 0.5))
 	for i in 5:                                                                                      # back armour plates
-		part(root, _box(Vector3(4.4 - absf(i - 2) * 0.6, 0.35, 1.3)), PLATE(), Vector3(0, 6.7 - absf(i - 2) * 0.35, -1.9 + i * 1.3), Vector3(0, 0, 0))
-		part(root, _box(Vector3(0.1, 0.4, 1.32)), GLOW(k, 3.0), Vector3(0, 6.85 - absf(i - 2) * 0.35, -1.9 + i * 1.3))
+		var plate := pivot(root, "Back_%d" % i, Vector3(0, 6.7 - absf(i - 2) * 0.35, -1.9 + i * 1.3))
+		part(plate, _box(Vector3(4.4 - absf(i - 2) * 0.6, 0.35, 1.3)), PLATE(), Vector3.ZERO)
+		part(plate, _box(Vector3(0.1, 0.4, 1.32)), GLOW(k, 3.0), Vector3(0, 0.15, 0))
 	moss(root, Vector3(0, 6.9, 1.0), 1.8, 10, 51)
 	var core := part(root, _sphere(0.55), GLOW(k, 5.0), Vector3(0, 3.6, -3.3))
 	core.name = "Core"
@@ -395,7 +402,7 @@ static func _mech_elephant(root: Node3D) -> void:
 		for i in 3:
 			var z := -2.4 + i * 2.9
 			wheel(root, "Wheel_%d%d" % [int(sx), i], Vector3(sx * 2.85, 1.6, z), 1.6, 1.2, k)
-			part(root, _box(Vector3(1.5, 0.3, 2.4)), BARK(), Vector3(sx * 2.85, 3.35, z), Vector3(0, 0, sx * 0.2))   # bark fenders
+			part(root, _box(Vector3(1.5, 0.3, 2.4)), BARK(), Vector3(sx * 2.85, 3.35, z), Vector3(0, 0, sx * 0.2)).name = "Fender_%d%d" % [int(sx), i]   # bark fenders
 	var head := pivot(root, "Head", Vector3(0, 5.6, -3.9))
 	part(head, _sphere(1.0), skin, Vector3.ZERO, Vector3.ZERO, Vector3(1.6, 1.6, 1.4))
 	part(head, _box(Vector3(2.2, 0.4, 1.4)), PLATE(), Vector3(0, 1.1, -0.3), Vector3(-0.3, 0, 0))
@@ -406,9 +413,10 @@ static func _mech_elephant(root: Node3D) -> void:
 		part(ear, _torus(1.7, 1.85), GLOW(k, 3.0), Vector3(sx * 1.45, -0.3, 0.2), Vector3(0, 0.25 * sx, PI * 0.5))
 		part(ear, _cyl(1.3, 1.3, 0.22, 16), BARK(), Vector3(sx * 1.5, -0.3, 0.2), Vector3(0, 0.25 * sx, PI * 0.5))
 		# Tusks: ivory rams, chrome tipped.
-		strut(head, Vector3(sx * 0.7, -0.8, -0.9), Vector3(sx * 0.9, -1.8, -2.6), 0.35, IVORY())
-		strut(head, Vector3(sx * 0.9, -1.8, -2.6), Vector3(sx * 0.9, -1.2, -3.8), 0.26, IVORY())
-		part(head, _cyl(0.0, 0.16, 0.5, 6), CHROME(), Vector3(sx * 0.9, -1.0, -4.05), Vector3(-1.2, 0, 0))
+		var tusk := pivot(head, "Tusk_" + ("L" if sx < 0 else "R"), Vector3.ZERO)
+		strut(tusk, Vector3(sx * 0.7, -0.8, -0.9), Vector3(sx * 0.9, -1.8, -2.6), 0.35, IVORY())
+		strut(tusk, Vector3(sx * 0.9, -1.8, -2.6), Vector3(sx * 0.9, -1.2, -3.8), 0.26, IVORY())
+		part(tusk, _cyl(0.0, 0.16, 0.5, 6), CHROME(), Vector3(sx * 0.9, -1.0, -4.05), Vector3(-1.2, 0, 0))
 	var trunk := pivot(head, "Trunk", Vector3(0, -0.6, -1.3))
 	var prev := Vector3.ZERO
 	for i in 5:

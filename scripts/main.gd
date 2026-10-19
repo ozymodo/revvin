@@ -126,6 +126,9 @@ const TESTS := {
 	# Every weapon on the car (corners, seats, a few levelled), enemies all
 	# round; the car drives a slow circle. Also drives through a weapon case.
 	"arsenal": [Vector3(-200, 0.6, 200), -PI / 2, 14.0, [2.0, 4.0, 5.5, 7.0, 9.0, 11.0, 13.0]],
+	# Enemies (BREAKUP=bee|roller|hopper, default all three) come at the
+	# parked car through its guns: parts shot off, how they carry on.
+	"breakup": [Vector3(-300, 0.6, 200), -PI / 2, 14.0, [3.0, 4.5, 6.0, 7.5, 9.0, 10.5, 12.0]],
 	# One of each enemy ahead of the car; drive at them slowly, then stop.
 	"enemies": [Vector3(-300, 0.6, 200), -PI / 2, 16.0, [1.0, 2.0, 3.0, 4.0, 5.5, 6.6, 7.2, 8.5, 9.5]],
 	# A straight ram into one dummy, then a dodge front-flip into a second;
@@ -393,6 +396,7 @@ func _ready() -> void:
 		combat.enemy_killed.connect(func(e: Node, how: String) -> void: print(">>> t=%.2f KILL %s (size %.2f) by %s  kills %d" % [_t, e.kind, e.size, how, combat.kills]))
 		cases.opened.connect(func(id: String, slot: String, lvl: int, rep: String) -> void: print(">>> t=%.2f CASE %s -> %s level %d %s" % [_t, id, slot, lvl, rep]))
 		combat.player_wrecked.connect(func() -> void: print(">>> t=%.2f WRECKED" % _t))
+		combat.part_lost.connect(func(e: Node, tag: String) -> void: print(">>> t=%.2f PART %s lost a %s  (hp %.0f/%.0f, %d parts left)" % [_t, e.kind, tag, e.hp, e.max_hp, e.parts.size()]))
 		level.grinds.grind_started.connect(func(st: int) -> void: print(">>> t=%.2f GRIND START %s  v=%.0f km/h  at %s on a %s (%d points)" % [_t, level.grinds.NAMES[st], car.speed * 3.6,
 			car.global_position.snapped(Vector3.ONE * 0.1), level.grinds._rail.kind, level.grinds._rail.pts.size()]))
 		level.grinds.grind_switched.connect(func(st: int) -> void: print(">>> t=%.2f GRIND SWITCH %s" % [_t, level.grinds.NAMES[st]]))
@@ -681,6 +685,35 @@ func _plan(t: float) -> Dictionary:
 			# Gun off for the first 6 s: let them come, ram what's ahead.
 			combat.arsenal.enabled = t > 6.0
 			return {"throttle": 1.0 if v < 60.0 and t < 9.0 else 0.0, "brake": 1.0 if t > 9.0 else 0.0}
+		"breakup":
+			if t > 0.4 and t - get_physics_process_delta_time() <= 0.4:
+				var fwd: Vector3 = -car.global_basis.z
+				var side: Vector3 = car.global_basis.x
+				var p0: Vector3 = car.global_position
+				var kinds := OS.get_environment("BREAKUP").split(",") if OS.has_environment("BREAKUP") else PackedStringArray(["bee", "roller", "hopper"])
+				for i in kinds.size():
+					var k := kinds[i]
+					var e: Node = director.spawn(k, p0 + fwd * (30.0 + i * 6.0) + side * (i - 1) * 7.0 + Vector3.UP * (7.0 if k == "bee" else 1.0), 1.4)
+					e.max_hp *= 4.0                    # tough, so there's time to shoot bits off
+					e.hp = e.max_hp
+			combat.invuln = 1.0
+			# A camera off to the side on the first one still going.
+			if not director.enemies.is_empty():
+				if _view_cam == null:
+					_view_cam = Camera3D.new()
+					_view_cam.fov = 50.0
+					add_child(_view_cam)
+					_view_cam.current = true
+				var ep: Vector3 = director.enemies[0].global_position
+				var cp: Vector3 = car.global_position
+				var across := (ep - cp).cross(Vector3.UP).normalized()
+				var eye := ep.lerp(cp, 0.35) + across * (6.0 + ep.distance_to(cp) * 0.4) + Vector3.UP * 3.0
+				_view_cam.global_position = _view_cam.global_position.lerp(eye, 0.1) if _view_cam.global_position != Vector3.ZERO else eye
+				_view_cam.look_at(ep.lerp(cp, 0.2) + Vector3.UP)
+			if fmod(t, 2.0) < get_physics_process_delta_time():
+				for e in director.enemies:
+					print(">>> t=%.1f %s hp %.0f/%.0f  lost %s  v %.1f m/s  y %.1f" % [t, e.kind, e.hp, e.max_hp, e._lost, e.linear_velocity.length(), e.global_position.y])
+			return {}
 		"smash":
 			if t < 0.05 and not _grind_rail_added:
 				_grind_rail_added = true
@@ -841,6 +874,17 @@ func _plan(t: float) -> Dictionary:
 					_boss_attack = _boss._attack
 					if _boss_attack != "":
 						print(">>> t=%.2f %s: %s  (car at %.0f m)" % [t, _boss.boss_name, _boss_attack.to_upper(), _boss.global_position.distance_to(car.global_position)])
+				# BOSSCAM=1: a camera circling the boss instead of the chase view.
+				if OS.has_environment("BOSSCAM"):
+					if _view_cam == null:
+						_view_cam = Camera3D.new()
+						_view_cam.fov = 55.0
+						_view_cam.far = 2000.0
+						add_child(_view_cam)
+						_view_cam.current = true
+					var bp: Vector3 = _boss.global_position
+					var a := t * 0.25
+					_view_cam.look_at_from_position(bp + Vector3(cos(a) * 24.0, 9.0, sin(a) * 24.0), bp + Vector3.UP * 3.0)
 				if fmod(t, 3.0) < dt:
 					print(">>> t=%.1f boss hp %.0f/%.0f  engaged %s  pos %s" % [t, _boss.hp, _boss.max_hp, _boss.engaged, _boss.global_position.snapped(Vector3.ONE * 0.1)])
 			if combat.hp < 30.0 and combat.wrecked <= 0.0:

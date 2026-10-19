@@ -5,6 +5,9 @@ extends "res://scripts/enemies/boss.gd"
 ##   tail    spins on the spot: the tail sweeps everything round it away
 ##   roar    charges its plasma throat and roars a beam down a cone,
 ##           cutting through whatever's in the way
+## It drives on two wheels, so losing one is crippling: it limps and drags
+## round on the stump. Without its tail it can't spin-sweep, and pitches
+## forward off balance.
 
 var _tail: Node3D
 var _charge_dir := Vector3.ZERO
@@ -20,10 +23,24 @@ func _build() -> void:
 	front = 5.5
 	sweep_r = 3.5
 	_tail = visual.get_node("Tail")
+	for n in ["Wheel_L", "Wheel_R"]:
+		add_drive(visual.get_node(n), "wheel", 0.15)
+	add_part(_tail, "tail", 0.14)
+	add_parts("Arm_", "arm", 0.03)
+	add_parts("Dorsal_", "plate", 0.02)
+	add_parts("SkullPlate", "plate", 0.05)
+	add_part(_jaw, "jaw", 0.07)
+
+
+func _part_lost(tag: String, node: Node3D) -> void:
+	super(tag, node)
+	if node == _tail:
+		_tail = null
+		_lean = -0.12
 
 
 func _choose_attack(d: float) -> String:
-	if d < 15.0 and randf() < 0.6:
+	if d < 15.0 and randf() < 0.6 and _tail:
 		return "tail"
 	if d < 75.0 and randf() < 0.5:
 		return "charge"
@@ -103,7 +120,8 @@ func _run_attack(name: String, t: float, _delta: float, d: float) -> bool:
 
 
 func _animate_extra(delta: float) -> void:
-	_tail.rotation.y = sin(_t * 2.0) * 0.25 + (0.6 if _attack == "tail" else 0.0) * sin(_t * 9.0)
+	if _tail:
+		_tail.rotation.y = sin(_t * 2.0) * 0.25 + (0.6 if _attack == "tail" else 0.0) * sin(_t * 9.0)
 	var open := 0.0
 	match _attack:
 		"charge":

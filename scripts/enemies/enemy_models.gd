@@ -122,6 +122,7 @@ static func _part(parent: Node3D, mesh: Mesh, material: String, pos: Vector3, ro
 
 
 ## Scrap bee. Faces -Z. Returns the root; wing pivots are named Wing_*.
+## Breakable bits: Wing_*, Stinger, Plate_*, Leg_*.
 static func bee() -> Node3D:
 	var root := Node3D.new()
 	_part(root, _sphere(0.35), "dark", Vector3.ZERO)                                 # thorax
@@ -131,19 +132,19 @@ static func bee() -> Node3D:
 	_part(root, _sphere(0.26), "scrap", Vector3(0, 0.05, -0.45))                    # head
 	for x in [-0.13, 0.13]:
 		_part(root, _sphere(0.1, 10), "eye_red", Vector3(x, 0.12, -0.62))
-	_part(root, _cyl(0.0, 0.09, 0.4), "steel", Vector3(0, -0.1, 1.15), Vector3(-PI * 0.5, 0, 0))   # stinger
+	_part(root, _cyl(0.0, 0.09, 0.4), "steel", Vector3(0, -0.1, 1.15), Vector3(-PI * 0.5, 0, 0)).name = "Stinger"
 	# Scrap plates bolted on at odd angles.
 	var plates := [[Vector3(0.18, 0.28, 0.05), Vector3(0.3, 0.2, 0.4)], [Vector3(-0.22, 0.22, 0.45), Vector3(-0.2, 0.5, -0.3)],
 		[Vector3(0.0, 0.3, 0.75), Vector3(0.6, 0.0, 0.2)]]
-	for p in plates:
-		_part(root, _box(Vector3(0.28, 0.04, 0.24)), "steel", p[0], p[1])
+	for i in plates.size():
+		_part(root, _box(Vector3(0.28, 0.04, 0.24)), "steel", plates[i][0], plates[i][1]).name = "Plate_%d" % i
 	# Antennae
 	for x in [-0.1, 0.1]:
 		_part(root, _cyl(0.01, 0.015, 0.4, 6), "dark", Vector3(x, 0.32, -0.6), Vector3(-0.6, 0, x * 3.0))
 	# Legs dangling
 	for z in [-0.1, 0.15]:
 		for x in [-1.0, 1.0]:
-			_part(root, _cyl(0.015, 0.02, 0.45, 6), "dark", Vector3(x * 0.2, -0.38, z), Vector3(0.3, 0, x * 0.4))
+			_part(root, _cyl(0.015, 0.02, 0.45, 6), "dark", Vector3(x * 0.2, -0.38, z), Vector3(0.3, 0, x * 0.4)).name = "Leg_%d_%d" % [int(x), int(z * 10)]
 	# Wings on pivots so they can flap.
 	for side in [-1.0, 1.0]:
 		for k in 2:
@@ -156,14 +157,13 @@ static func bee() -> Node3D:
 
 
 ## Spherical tyre, radius 1. The body rolls, so the model just rides along.
+## Breakable bits: the tread in four patches (Tread_*), the hubs (Hub_L/R).
 static func roller() -> Node3D:
 	var root := Node3D.new()
 	_part(root, _sphere(0.9, 24), "rubber", Vector3.ZERO)
-	# Knobbly tread: rows of blocks over the sphere (a MultiMesh).
-	var mm := MultiMesh.new()
-	mm.transform_format = MultiMesh.TRANSFORM_3D
-	mm.mesh = _box(Vector3(0.24, 0.13, 0.2))
-	var xfs: Array[Transform3D] = []
+	# Knobbly tread: rows of blocks over the sphere, in four patches round
+	# the axle (a MultiMesh each) so it can lose a patch at a time.
+	var patches: Array = [[], [], [], []]
 	for row in range(-3, 4):
 		var lat := row * 0.36
 		var n := int(round(14 * cos(lat))) + 2
@@ -171,40 +171,60 @@ static func roller() -> Node3D:
 			var lon := (i + (0.5 if row % 2 != 0 else 0.0)) * TAU / n
 			var dir := Vector3(cos(lat) * cos(lon), sin(lat), cos(lat) * sin(lon))
 			var b := Basis.looking_at(dir.cross(Vector3.UP).normalized() if absf(dir.y) < 0.98 else Vector3.RIGHT, dir)
-			xfs.append(Transform3D(b, dir * 0.93))
-	mm.instance_count = xfs.size()
-	for i in xfs.size():
-		mm.set_instance_transform(i, xfs[i])
-	var mmi := MultiMeshInstance3D.new()
-	mmi.multimesh = mm
-	mmi.material_override = mat("rubber")
-	root.add_child(mmi)
+			# Patches split by the angle round the X axle (the hubs' axis).
+			var k := int(fposmod(atan2(dir.z, dir.y), TAU) / (TAU / 4.0)) % 4
+			patches[k].append(Transform3D(b, dir * 0.93))
+	for k in 4:
+		var mm := MultiMesh.new()
+		mm.transform_format = MultiMesh.TRANSFORM_3D
+		mm.mesh = _box(Vector3(0.24, 0.13, 0.2))
+		mm.instance_count = patches[k].size()
+		for i in patches[k].size():
+			mm.set_instance_transform(i, patches[k][i])
+		var mmi := MultiMeshInstance3D.new()
+		mmi.name = "Tread_%d" % k
+		mmi.multimesh = mm
+		mmi.material_override = mat("rubber")
+		root.add_child(mmi)
 	# Metal hubs at the poles, one with a glowing eye; a goo seam round the middle.
 	for sgn in [-1.0, 1.0]:
-		_part(root, _cyl(0.35, 0.35, 0.12, 16), "steel", Vector3(sgn * 0.88, 0, 0), Vector3(0, 0, PI * 0.5))
+		var hub := Node3D.new()
+		hub.name = "Hub_" + ("L" if sgn < 0 else "R")
+		root.add_child(hub)
+		_part(hub, _cyl(0.35, 0.35, 0.12, 16), "steel", Vector3(sgn * 0.88, 0, 0), Vector3(0, 0, PI * 0.5))
 		for k in 5:
 			var a := k * TAU / 5.0
-			_part(root, _cyl(0.04, 0.04, 0.14, 6), "dark", Vector3(sgn * 0.92, cos(a) * 0.22, sin(a) * 0.22), Vector3(0, 0, PI * 0.5))
-	_part(root, _cyl(0.12, 0.12, 0.05, 12), "eye_red", Vector3(0.96, 0, 0), Vector3(0, 0, PI * 0.5))
+			_part(hub, _cyl(0.04, 0.04, 0.14, 6), "dark", Vector3(sgn * 0.92, cos(a) * 0.22, sin(a) * 0.22), Vector3(0, 0, PI * 0.5))
+		if sgn > 0:
+			_part(hub, _cyl(0.12, 0.12, 0.05, 12), "eye_red", Vector3(0.96, 0, 0), Vector3(0, 0, PI * 0.5))
 	_part(root, _torus(0.86, 0.94), "goo", Vector3.ZERO, Vector3(0, 0, PI * 0.5))
 	return root
 
 
 ## Mechanical frog, about 1.3 m long at unit size, sitting on y = 0.
 ## Faces -Z. Back-leg pivots are named Thigh_L / Thigh_R.
+## Breakable bits: Thigh_L/R, Arm_L/R (front legs), Eye_L/R, HeadPlate.
 static func hopper() -> Node3D:
 	var root := Node3D.new()
 	_part(root, _sphere(0.5), "frog", Vector3(0, 0.45, 0), Vector3(0.15, 0, 0), Vector3(1.1, 0.7, 1.3))   # body
-	_part(root, _box(Vector3(0.72, 0.22, 0.42)), "dark", Vector3(0, 0.62, -0.42), Vector3(0.25, 0, 0))   # head plate
+	_part(root, _box(Vector3(0.72, 0.22, 0.42)), "dark", Vector3(0, 0.62, -0.42), Vector3(0.25, 0, 0)).name = "HeadPlate"
 	_part(root, _sphere(0.2), "goo", Vector3(0, 0.32, -0.55)).name = "Throat"                         # throat sac
 	for x in [-0.27, 0.27]:
-		_part(root, _sphere(0.18), "eye_yellow", Vector3(x, 0.86, -0.42))
-		_part(root, _sphere(0.08, 8), "pupil", Vector3(x, 0.88, -0.58))
-		_part(root, _torus(0.16, 0.21), "steel", Vector3(x, 0.86, -0.43), Vector3(PI * 0.5, 0, 0))     # eye rims
+		var eye := Node3D.new()
+		eye.name = "Eye_" + ("L" if x < 0 else "R")
+		eye.position = Vector3(x, 0.86, -0.42)
+		root.add_child(eye)
+		_part(eye, _sphere(0.18), "eye_yellow", Vector3.ZERO)
+		_part(eye, _sphere(0.08, 8), "pupil", Vector3(0, 0.02, -0.16))
+		_part(eye, _torus(0.16, 0.21), "steel", Vector3(0, 0, -0.01), Vector3(PI * 0.5, 0, 0))     # eye rims
 	# Front legs
 	for x in [-0.3, 0.3]:
-		_part(root, _cyl(0.05, 0.06, 0.42, 8), "steel", Vector3(x, 0.2, -0.42), Vector3(0.2, 0, x * 0.5))
-		_part(root, _box(Vector3(0.18, 0.04, 0.16)), "dark", Vector3(x * 1.15, 0.02, -0.5))
+		var arm := Node3D.new()
+		arm.name = "Arm_" + ("L" if x < 0 else "R")
+		arm.position = Vector3(x, 0.2, -0.42)
+		root.add_child(arm)
+		_part(arm, _cyl(0.05, 0.06, 0.42, 8), "steel", Vector3.ZERO, Vector3(0.2, 0, x * 0.5))
+		_part(arm, _box(Vector3(0.18, 0.04, 0.16)), "dark", Vector3(x * 0.15, -0.18, -0.08))
 	# Back legs on pivots: thigh, shin, foot.
 	for side in [-1.0, 1.0]:
 		var thigh := Node3D.new()

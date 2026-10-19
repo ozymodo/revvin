@@ -16,7 +16,7 @@ const LIFE := 9.0
 const CAR_GRACE := 0.6
 
 var car: PhysicsBody3D
-var _bodies: Array = []             # [body, age, passing the car]
+var _bodies: Array = []             # [body, age, passing the car, (life)]
 var _meshes := {}
 var _mats := {}
 var _shapes := {}
@@ -60,6 +60,64 @@ func cube(at: Vector3, size: Vector3, color: Color, vel: Vector3, glow := 0.0) -
 	if grace:
 		body.add_collision_exception_with(car)
 	_bodies.append([body, 0.0, grace])
+	while _bodies.size() > MAX:
+		var old: Array = _bodies.pop_front()
+		if is_instance_valid(old[0]):
+			(old[0] as Node).queue_free()
+	return body
+
+
+## A piece torn off an enemy (a leg, a wheel, an armour plate): `node`
+## moves into a tumbling body of its own, keeping its look and where it
+## was. A box fitted round its meshes, or a cylinder rolling about its
+## local X for a wheel, so a lost wheel rolls away. Heavier than rubble.
+func chunk(node: Node3D, vel: Vector3, spin: Vector3, wheel := false) -> RigidBody3D:
+	var body := RigidBody3D.new()
+	body.collision_layer = LAYER
+	body.collision_mask = 1 | 4 | LAYER
+	var pm := PhysicsMaterial.new()
+	pm.friction = 0.9
+	pm.bounce = 0.2
+	body.physics_material_override = pm
+	add_child(body)
+	var xf := node.global_transform
+	body.global_transform = Transform3D(xf.basis.orthonormalized(), xf.origin)
+	# Child 0 fades on the way out, so the part sits under a holder that
+	# keeps its own scale.
+	var holder := Node3D.new()
+	body.add_child(holder)
+	node.reparent(holder)
+	var box := AABB()
+	var first := true
+	var inv := body.global_transform.affine_inverse()
+	for mi in node.find_children("*", "GeometryInstance3D", true, false) + ([node] if node is GeometryInstance3D else []):
+		var g := mi as GeometryInstance3D
+		var a: AABB = (inv * g.global_transform) * g.get_aabb()
+		box = a if first else box.merge(a)
+		first = false
+	box = box.grow(0.02) if not first else AABB(Vector3.ONE * -0.2, Vector3.ONE * 0.4)
+	var cs := CollisionShape3D.new()
+	if wheel:
+		var cyl := CylinderShape3D.new()
+		cyl.radius = maxf(box.size.y, box.size.z) * 0.5
+		cyl.height = box.size.x
+		cs.shape = cyl
+		cs.rotation = Vector3(0, 0, PI * 0.5)
+	else:
+		var b := BoxShape3D.new()
+		b.size = box.size
+		cs.shape = b
+	cs.position = box.get_center()
+	body.add_child(cs)
+	body.center_of_mass_mode = RigidBody3D.CENTER_OF_MASS_MODE_CUSTOM
+	body.center_of_mass = box.get_center()
+	body.mass = clampf(box.size.x * box.size.y * box.size.z * 120.0, 4.0, 400.0)
+	body.linear_velocity = vel
+	body.angular_velocity = spin
+	var grace := car != null and is_instance_valid(car)
+	if grace:
+		body.add_collision_exception_with(car)
+	_bodies.append([body, 0.0, grace, LIFE + 4.0])     # parts last a little longer than rubble
 	while _bodies.size() > MAX:
 		var old: Array = _bodies.pop_front()
 		if is_instance_valid(old[0]):
@@ -114,10 +172,11 @@ func _physics_process(delta: float) -> void:
 			b[2] = false
 			if is_instance_valid(car):
 				body.remove_collision_exception_with(car)
-		if b[1] > LIFE:
+		var life: float = b[3] if b.size() > 3 else LIFE
+		if b[1] > life:
 			body.queue_free()
 			continue
-		if b[1] > LIFE - 1.0:
-			(body.get_child(0) as Node3D).scale = Vector3.ONE * maxf(LIFE - b[1], 0.05)
+		if b[1] > life - 1.0:
+			(body.get_child(0) as Node3D).scale = Vector3.ONE * maxf(life - b[1], 0.05)
 		keep.append(b)
 	_bodies = keep

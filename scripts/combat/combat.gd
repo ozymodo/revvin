@@ -15,6 +15,7 @@ signal player_hurt(amount: float)
 signal player_wrecked()
 signal enemy_killed(enemy: Node, how: String)
 signal enemy_rammed(enemy: Node, damage: float, flip: bool)
+signal part_lost(enemy: Node, tag: String)
 signal player_dodged()
 
 const Arsenal := preload("res://scripts/combat/arsenal.gd")
@@ -266,7 +267,7 @@ func on_car_hit_enemy(e: Node, closing: float, dir: Vector3) -> void:
 	sfx.thunk(clampf(dmg / 120.0, 0.2, 1.0))
 	number(at + Vector3.UP * 0.8, dmg, Color(1.0, 0.75, 0.25) if flipping else Color(1.0, 0.95, 0.8), flipping)
 	enemy_rammed.emit(e, dmg, flipping)
-	e.take_damage(dmg, "flip" if flipping else "ram")
+	e.take_damage(dmg, "flip" if flipping else "ram", at)
 
 
 func on_enemy_died(e: Node, how: String) -> void:
@@ -276,6 +277,7 @@ func on_enemy_died(e: Node, how: String) -> void:
 		e.die_spectacular()
 		return
 	var at: Vector3 = e.global_position
+	e.shatter(at)
 	var s: float = e.size
 	fx.debris(at, Color(0.4, 0.33, 0.26), GOO_COLOR, s)
 	fx.burst(at, GOO_COLOR, 0.6 + s * 0.4, Vector3.UP)
@@ -624,7 +626,7 @@ func beam_damage(target: Node, amount: float, at: Vector3, show: bool) -> void:
 		fx.sparks(at, Color(0.7, 0.4, 1.0), 0.15, Vector3.UP)
 		acc = 0.0
 	_beam_acc[target] = acc
-	target.take_damage(amount, "gun")
+	target.take_damage(amount, "gun", at)
 
 
 ## MAG slam: everything inside the shockwave takes a hit (hardest at the
@@ -646,7 +648,22 @@ func _hurt_enemy(e: Node, dmg: float, at: Vector3, how: String, color := Color(0
 	var push: Vector3 = (e.global_position - at).normalized() + Vector3.UP * 0.3
 	e.apply_central_impulse(push.normalized() * minf(e.mass, 600.0) * (0.3 if e.boss else 2.5))
 	number(e.global_position + Vector3.UP * (e.radius + 0.4), dmg, color.lerp(Color.WHITE, 0.4), crit)
-	e.take_damage(dmg, how)
+	e.take_damage(dmg, how, at)
+
+
+## A part tore off an enemy: a shower of sparks, a few scraps, a crunch.
+func part_broken(e: Node, at: Vector3, tag: String, vel: Vector3) -> void:
+	part_lost.emit(e, tag)
+	var big: bool = e.boss
+	var s: float = e.radius
+	if not Lod.near(at, 160.0):
+		return
+	fx.sparks(at, Color(1.0, 0.7, 0.35), clampf(0.3 * s, 0.4, 1.4), (vel - e.linear_velocity).normalized() if vel.length() > 0.1 else Vector3.UP)
+	if wrecking:
+		wrecking.debris.burst(at, 3 + int(s * 2.0), clampf(0.08 * s, 0.06, 0.35), Color(0.17, 0.18, 0.2), vel * 0.5, 4.0 + s, Vector3.ONE * clampf(0.2 * s, 0.1, 0.8))
+	sfx.crunch(at, clampf(0.3 * s, 0.3, 1.2))
+	if big:
+		fx.punch(0.25 if tag == "plate" else 0.5)
 
 
 func _goo_step(s: Dictionary, p0: Vector3, p1: Vector3, space: PhysicsDirectSpaceState3D) -> bool:

@@ -4,6 +4,10 @@ extends "res://scripts/enemies/enemy.gd"
 ## hunts it when close, trying to bump into it or roll right over it.
 ## It smashes into the world as it goes: props get knocked flying, and
 ## hard hits on walls and kerbs leave scorch marks and throw debris.
+##
+## Its tread comes off in patches and its hubs get blown out: a bald patch
+## loses grip and thumps every time it comes round, a lost hub leaves it
+## lopsided, so it wobbles and lurches off line. Slower, but still coming.
 
 const HUNT_RANGE := 110.0
 const ROLL_OVER_DPS := 0.8          # share of contact damage per second while on top of the car
@@ -15,6 +19,7 @@ var _on_top_t := 0.0
 var _stuck_t := 0.0
 var _detour := Vector3.ZERO
 var _detour_t := 0.0
+var _roll := 0.0                    # how far it has turned, for the thump of a bald patch
 
 
 func _build() -> void:
@@ -34,6 +39,11 @@ func _build() -> void:
 	add_child(cs)
 	visual = Models.roller()
 	add_child(visual)
+	for n in visual.get_children():
+		if n.name.begins_with("Tread_"):
+			add_part(n, "tread", 0.14)
+		elif n.name.begins_with("Hub_"):
+			add_part(n, "hub", 0.2)
 	_speed = randf_range(17.0, 26.0) / pow(size, 0.3)
 
 
@@ -68,13 +78,25 @@ func _think(delta: float) -> void:
 		dir = (_detour * 0.8 + dir * 0.2).normalized()
 	# Spin up toward the rolling speed for that direction, with a little
 	# push so it can climb kerbs and ramps.
-	var w_des := Vector3.UP.cross(dir) * (_speed / radius)
+	# Damage: slower, and off-balance.
+	var bald := lost("tread")
+	var hubs := lost("hub")
+	var speed := _speed * (1.0 - 0.1 * bald - 0.15 * hubs)
+	if bald + hubs > 0:
+		var wobble := (0.25 * bald + 0.5 * hubs)
+		dir = dir.rotated(Vector3.UP, sin(_t * (2.0 + hubs)) * 0.35 * wobble)
+		_roll += angular_velocity.length() * delta
+		if _roll > TAU:
+			_roll -= TAU
+			if bald > 0 and not ground_below(global_position, radius + 0.25).is_empty():
+				apply_central_impulse(Vector3.UP * mass * (0.8 + 0.5 * bald))
+	var w_des := Vector3.UP.cross(dir) * (speed / radius)
 	var w_err := w_des - angular_velocity
 	var inertia_k := 0.4 * mass * radius * radius
 	apply_torque((w_err * inertia_k * 4.0).limit_length(mass * radius * 30.0))
 	var flat_v := Vector3(linear_velocity.x, 0, linear_velocity.z)
-	if flat_v.length() < _speed:
-		apply_central_force(dir * mass * 4.0)
+	if flat_v.length() < speed:
+		apply_central_force(dir * mass * 4.0 * (1.0 - 0.15 * bald))
 
 	# Rolling over the car: grinding damage while on top of it.
 	if get_colliding_bodies().has(car) and global_position.y > car.global_position.y + 0.5:

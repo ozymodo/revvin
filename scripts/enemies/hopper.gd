@@ -2,6 +2,12 @@ extends "res://scripts/enemies/enemy.gd"
 ## Hopper: a mechanical frog. Sits, crouches, then leaps on a ballistic arc
 ## aimed to come down on the car (leading it). Stronger (bigger) frogs jump
 ## higher. Landing on the car is a stomp; it bounces off and goes again.
+##
+## Its back legs do the jumping: lose one and it leaps low and short,
+## slewing off toward the lame side and tumbling round in the air; lose
+## both and it drags itself along on its front legs in little lunges. A
+## front leg gone and it lands badly (nose down, slow to go again); an eye
+## gone and its aim wanders.
 
 const HUNT_RANGE := 140.0          # covers the whole spawn ring
 const MAX_HOP_SPEED := 38.0
@@ -13,6 +19,8 @@ var _apex := 4.0
 var _thighs: Array[Node3D] = []
 var _throat: Node3D
 var _yaw := 0.0
+var _lame := 0.0                    # -1..1: the back leg missing (left -, right +)
+var _tumble := 0.0                  # extra spin in the air off a lopsided kick
 
 
 func _build() -> void:
@@ -39,9 +47,22 @@ func _build() -> void:
 	for n in ["Thigh_L", "Thigh_R"]:
 		_thighs.append(visual.get_node(n))
 	_throat = visual.get_node("Throat")
+	for n in _thighs:
+		add_part(n, "leg", 0.28)
+	for n in ["Arm_L", "Arm_R"]:
+		add_part(visual.get_node(n), "arm", 0.15)
+	for n in ["Eye_L", "Eye_R"]:
+		add_part(visual.get_node(n), "eye", 0.1)
+	add_part(visual.get_node("HeadPlate"), "plate", 0.15)
 	# Stronger frogs jump higher: 3.5 m for the smallest, ~11 m for big ones.
 	_apex = 3.5 + 6.0 * clampf(size - 0.7, 0.0, 1.3)
 	_jump_cd = randf_range(0.5, 2.0)
+
+
+func _part_lost(tag: String, node: Node3D) -> void:
+	if tag == "leg":
+		_thighs.erase(node)
+		_lame = 0.0 if _thighs.size() != 1 else (1.0 if _thighs[0].name == "Thigh_L" else -1.0)
 
 
 func _think(delta: float) -> void:
@@ -51,7 +72,8 @@ func _think(delta: float) -> void:
 	if grounded:
 		if _air:
 			_air = false
-			_jump_cd = randf_range(0.5, 1.2)
+			_tumble = 0.0
+			_jump_cd = randf_range(0.5, 1.2) + 0.45 * lost("arm")
 		# Sit still (friction) and wind up.
 		linear_velocity.x *= 0.8
 		linear_velocity.z *= 0.8
@@ -74,7 +96,13 @@ func _think(delta: float) -> void:
 		(th.get_node("Shin") as Node3D).rotation.x = -leg * 1.2
 	_throat.scale = Vector3.ONE * (1.0 + 0.25 * sin(_t * 7.0) + _crouch * 0.3)
 	var lean := clampf(linear_velocity.y * 0.04, -0.4, 0.4) if _air else -_crouch * 0.15
-	visual.basis = Basis.from_euler(Vector3(lean, _yaw, 0)).scaled(Vector3.ONE * visual.scale.x)
+	# Lame: sits slumped toward the missing leg, nose down without front legs.
+	if not _air:
+		lean -= 0.18 * lost("arm") + (0.15 if _thighs.is_empty() else 0.0)
+	else:
+		_yaw += _tumble * delta
+	var roll := -_lame * 0.3
+	visual.basis = Basis.from_euler(Vector3(lean, _yaw, roll)).scaled(Vector3.ONE * visual.scale.x)
 
 
 ## Leap to land on the car (leading it), or a wander hop when it's far off.
@@ -82,8 +110,10 @@ func _jump(to: Vector3) -> void:
 	_jump_cd = 99.0
 	_crouch = 0.0
 	var g := 9.8 * gravity_scale
-	var apex := _apex
-	var target := car.global_position
+	var legs := _thighs.size()
+	var apex: float = _apex * [0.12, 0.5, 1.0][legs]
+	var reach: float = MAX_HOP_SPEED * [0.25, 0.6, 1.0][legs]
+	var target := car.global_position + Vector3(randf_range(-1, 1), 0, randf_range(-1, 1)) * 4.0 * lost("eye")
 	if to.length() > HUNT_RANGE:
 		var a := randf() * TAU
 		target = global_position + Vector3(cos(a), 0, sin(a)) * randf_range(4.0, 10.0)
@@ -95,7 +125,12 @@ func _jump(to: Vector3) -> void:
 	if to.length() <= HUNT_RANGE:
 		target += car.linear_velocity * t_flight
 	var flat := Vector3(target.x - global_position.x, 0, target.z - global_position.z)
-	var vh := (flat / maxf(t_flight, 0.1)).limit_length(MAX_HOP_SPEED)
+	var vh := (flat / maxf(t_flight, 0.1)).limit_length(reach)
+	# One leg: the kick is lopsided, it slews off toward the lame side and
+	# spins round in the air.
+	if legs == 1:
+		vh += vh.cross(Vector3.UP).normalized() * _lame * vh.length() * 0.35
+		_tumble = _lame * randf_range(3.0, 6.0)
 	linear_velocity = vh + Vector3.UP * vy
 	combat.sfx_hop(global_position, size)
 

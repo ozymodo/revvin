@@ -4,6 +4,8 @@ extends "res://scripts/enemies/boss.gd"
 ##   cannon   the trunk swings up and fires plasma shells
 ##   quake    rears up and stamps: a huge shockwave
 ##   toss     catches the car on its tusks and throws it
+## Six wheels, so it shrugs off losing one or two. Its trunk is its cannon
+## (gone: no more shells), its tusks do the tossing (both gone: it can't).
 
 var _trunk: Node3D
 var _ears: Array[Node3D] = []
@@ -23,16 +25,34 @@ func _build() -> void:
 	_trunk = visual.find_child("Trunk", true, false)
 	for n in ["Ear_L", "Ear_R"]:
 		_ears.append(visual.find_child(n, true, false))
+		add_part(_ears[-1], "ear", 0.06)
+	for w in _wheels:
+		add_drive(w, "wheel", 0.07)
+	add_part(_trunk, "trunk", 0.12)
+	add_parts("Tusk_", "tusk", 0.07)
+	add_parts("Back_", "plate", 0.025)
+	add_parts("Fender_", "plate", 0.02)
+
+
+func _part_lost(tag: String, node: Node3D) -> void:
+	super(tag, node)
+	if node == _trunk:
+		_trunk = null
+	var i := _ears.find(node)
+	if i >= 0:
+		_ears[i] = null
 
 
 func _choose_attack(d: float) -> String:
 	var ahead := (car.global_position - global_position).normalized().dot(-global_basis.z) > 0.6
-	if d < 10.0 and ahead:
+	if d < 10.0 and ahead and lost("tusk") < 2:
 		return "toss"
 	if d > 22.0 and d < 90.0 and randf() < 0.4:
 		return "trample"
 	if d < 45.0 and randf() < 0.45:
 		return "quake"
+	if _trunk == null:
+		return "trample" if d < 90.0 else ""
 	return "cannon" if d < 110.0 else ""
 
 

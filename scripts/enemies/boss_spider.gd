@@ -4,6 +4,8 @@ extends "res://scripts/enemies/boss.gd"
 ##   pounce  leaps high and lands on the car
 ##   acid    lobs venom that leaves burning pools on the road
 ##   brood   calls up spiders out of the ground to hunt the car
+## Its legs come off one by one: it slows and lists toward the gaps, and
+## with half of them gone it can't pounce. Without its fangs, no acid.
 
 var _legs: Array[Node3D] = []
 
@@ -19,6 +21,14 @@ func _build() -> void:
 	sweep_r = 4.5
 	for n in visual.find_children("Leg_*", "", true, false):
 		_legs.append(n as Node3D)
+		add_drive(n, "leg", 0.07)
+	add_parts("Band_", "plate", 0.03)
+	add_parts("Fang_", "fang", 0.05)
+
+
+func _part_lost(tag: String, node: Node3D) -> void:
+	super(tag, node)
+	_legs.erase(node)
 
 
 func _choose_attack(d: float) -> String:
@@ -27,9 +37,9 @@ func _choose_attack(d: float) -> String:
 		return "brood"
 	if d > 25.0 and r < 0.5:
 		return "web"
-	if d < 55.0 and r < 0.75:
+	if d < 55.0 and r < 0.75 and lost("leg") < 4:
 		return "pounce"
-	if d < 70.0:
+	if d < 70.0 and lost("fang") < 2:
 		return "acid"
 	return "web" if d < 100.0 else ""
 

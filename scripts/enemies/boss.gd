@@ -13,6 +13,12 @@ extends "res://scripts/enemies/enemy.gd"
 ##
 ## Helpers for the subclasses: drive(), face(), lob(), shoot(), shockwave(),
 ## melee(), hazard(), leap().
+##
+## Breaking it down: the wheels and legs it drives on (add_drive) and its
+## limbs and armour (add_part) come off under fire. Every wheel or leg lost
+## slows it, staggers it, drags it round toward the missing side and lets
+## that corner sag onto its stump, which scrapes sparks along the road.
+## The subclasses drop the attacks a lost limb made possible.
 
 signal defeated(boss: Node)
 
@@ -62,11 +68,20 @@ var _leaping := false
 var _grounded := true
 var _shake := 0.0
 var _spin := 0.0                    # rad/s: spinning on the spot (overrides steering)
+var _drive_total := 0               # wheels and legs it drives on
+var _mobility := 1.0                # what's left of its drive (speed, turning)
+var _drag := Vector2.ZERO           # where the lost drive was: x left (-) / right (+), y front (-) / back (+)
+var _stagger := 0.0                 # s left of reeling from a lost wheel or leg
+var _lean := 0.0                    # extra nose-down (a rex without its tail)
+var _scrape_t := 0.0
+
+const LOSS_NAMES := {"wheel": "A WHEEL", "leg": "A LEG", "arm": "AN ARM", "tail": "ITS TAIL", "trunk": "ITS CANNON", "tusk": "A TUSK"}
 
 
 ## Subclass sets kind, numbers, shape. Call from _build().
 func setup_body(shape_size: Vector3, shape_y: float, body_mass: float) -> void:
 	boss = true
+	part_mult = 1.8                     # lots of parts sharing the hits: shed them steadily over the fight
 	mass = body_mass
 	radius = maxf(shape_size.x, shape_size.z) * 0.5
 	axis_lock_angular_x = true
@@ -106,6 +121,48 @@ func _ready() -> void:
 	_bar.scale = Vector3.ZERO          # the HUD shows a boss bar instead
 
 
+## A wheel or leg it drives on, and breakable.
+func add_drive(node: Node3D, tag: String, share: float) -> void:
+	add_part(node, tag, share)
+	_drive_total += 1
+
+
+## Parts named `prefix`* anywhere in the model, all breakable as `tag`.
+func add_parts(prefix: String, tag: String, share: float) -> void:
+	for n in visual.find_children(prefix + "*", "", true, false):
+		add_part(n as Node3D, tag, share)
+
+
+func _part_lost(tag: String, node: Node3D) -> void:
+	for w in [node] + node.find_children("Wheel_*", "", true, false):
+		var i := _wheels.find(w)
+		if i >= 0:
+			_wheels.remove_at(i)
+			_wheel_r.remove_at(i)
+	if _jaw and (node == _jaw or node.is_ancestor_of(_jaw)):
+		_jaw = null
+	if _head and (node == _head or node.is_ancestor_of(_head)):
+		_head = null
+	if _core and node.is_ancestor_of(_core):
+		_core = null
+	if tag == "wheel" or tag == "leg":
+		var p := to_local(node.global_position)
+		var half := maxf(_drive_total * 0.5, 1.0)
+		_drag.x += signf(p.x) / half if absf(p.x) > 0.5 else 0.0
+		_drag.y += signf(p.z) / half if absf(p.z) > 1.0 else 0.0
+		_drag = _drag.clamp(Vector2(-1, -1), Vector2(1, 1))
+		_mobility = maxf(1.0 - 0.75 * float(lost("wheel") + lost("leg")) / maxf(_drive_total, 1.0), 0.25)
+		_stagger = 0.9
+	if LOSS_NAMES.has(tag) and wildlife and engaged and not dead:
+		wildlife.hud_toast("%s LOST %s" % [boss_name, LOSS_NAMES[tag]], accent)
+
+
+func _wheel_spin(node: Node3D) -> float:
+	var i := _wheels.find(node)
+	var fwd_speed := Vector3(linear_velocity.x, 0, linear_velocity.z).dot(-global_basis.z)
+	return -fwd_speed / _wheel_r[i] if i >= 0 else 0.0
+
+
 ## Override: name of the next attack for this distance, or "" to keep chasing.
 func _choose_attack(_d: float) -> String:
 	return ""
@@ -121,11 +178,11 @@ func _animate_extra(_delta: float) -> void:
 	pass
 
 
-func take_damage(amount: float, how: String) -> bool:
+func take_damage(amount: float, how: String, at := Vector3.INF) -> bool:
 	_hurt_t = 6.0
 	if not engaged:
 		engage()
-	return super(amount, how)
+	return super(amount, how, at)
 
 
 func engage() -> void:
@@ -199,12 +256,14 @@ func _prowl(delta: float) -> void:
 func _drive(delta: float) -> void:
 	if _leaping:
 		return
+	_stagger -= delta
+	var turn := turn_rate * (0.5 + 0.5 * _mobility)
 	if _spin != 0.0:
-		angular_velocity.y = _spin
+		angular_velocity.y = _spin * (0.5 + 0.5 * _mobility)
 	elif _want_dir.length() > 0.1:
 		var target := atan2(-_want_dir.x, -_want_dir.z)
 		var diff := wrapf(target - rotation.y, -PI, PI)
-		angular_velocity.y = clampf(diff * 3.0, -turn_rate, turn_rate)
+		angular_velocity.y = clampf(diff * 3.0, -turn, turn)
 	else:
 		angular_velocity.y = 0.0
 	if not _grounded:
@@ -212,9 +271,12 @@ func _drive(delta: float) -> void:
 	var fwd := -global_basis.z
 	fwd.y = 0.0
 	fwd = fwd.normalized()
+	# A stump dragging on one side hauls it round that way.
+	var fwd_speed := Vector3(linear_velocity.x, 0, linear_velocity.z).dot(fwd)
+	angular_velocity.y -= _drag.x * 0.5 * clampf(fwd_speed / 10.0, -1.0, 1.0)
 	# Mostly along its nose (it drives, it doesn't strafe).
 	var lined := clampf(fwd.dot(_want_dir), 0.0, 1.0) if _want_dir.length() > 0.1 else 0.0
-	var v_des := fwd * _want_speed * (0.35 + 0.65 * lined)
+	var v_des := fwd * _want_speed * _mobility * (0.35 + 0.65 * lined) * (0.15 if _stagger > 0.0 else 1.0)
 	var flat := Vector3(linear_velocity.x, 0, linear_velocity.z)
 	var dv := (v_des - flat).limit_length(accel * delta)
 	linear_velocity += dv
@@ -251,10 +313,42 @@ func _process(delta: float) -> void:
 	var fwd_speed := flat.dot(-global_basis.z)
 	for i in _wheels.size():
 		_wheels[i].rotation.x -= fwd_speed / _wheel_r[i] * delta
+	_limp(delta)
 	if _core:
 		var pulse := 1.0 + 0.12 * sin(_t * 5.0) + (0.5 * minf(_attack_t, 1.0) if _attack != "" and _attack_t < 1.2 else 0.0)
 		_core.scale = _core.scale.lerp(Vector3.ONE * pulse, 1.0 - exp(-8.0 * delta))
 	_animate_extra(delta)
+
+
+## Sags onto the corner it's lost wheels or legs from (lurching as each
+## one goes), and drags the stumps along the road in a spray of sparks.
+func _limp(delta: float) -> void:
+	if _drive_total == 0:
+		return
+	var reel := maxf(_stagger, 0.0)
+	var down := 1.0 - _mobility
+	var pitch := _drag.y * 0.14 + _lean + sin(_t * 23.0) * 0.04 * reel
+	var roll := -_drag.x * 0.14 + sin(_t * 19.0) * 0.05 * reel
+	var k := 1.0 - exp(-6.0 * delta)
+	var cur := visual.rotation
+	var s := visual.scale.x
+	visual.basis = Basis.from_euler(Vector3(lerpf(cur.x, pitch, k), 0, lerpf(cur.z, roll, k))).scaled(Vector3.ONE * s)
+	visual.position.y = lerpf(visual.position.y, -down * 0.7, k)
+	var spd := Vector2(linear_velocity.x, linear_velocity.z).length()
+	if down <= 0.0 or not _grounded or spd < 3.0:
+		return
+	_scrape_t -= delta
+	if _scrape_t > 0.0:
+		return
+	_scrape_t = 0.09
+	var stumps := _stumps.filter(func(st: Array) -> bool: return st[1] == "wheel" or st[1] == "leg")
+	if stumps.is_empty():
+		return
+	var at := visual.to_global(stumps.pick_random()[0])
+	at.y = global_position.y + 0.3
+	if Lod.near(at, 70.0):
+		var back := -Vector3(linear_velocity.x, 0, linear_velocity.z).normalized()
+		fx.sparks(at, Color(1.0, 0.65, 0.3), 0.35, (back + Vector3.UP * 0.5).normalized())
 
 
 # ------------------------------------------------------------------ helpers
@@ -436,6 +530,7 @@ func die_spectacular() -> void:
 	d.burst(at, 30, 0.9, Color(0.17, 0.18, 0.2), Vector3.UP * 6.0, 16.0, Vector3(3, 2, 4))
 	d.burst(at, 14, 0.6, accent, Vector3.UP * 8.0, 18.0, Vector3(3, 2, 3), 3.0)
 	d.burst(at, 10, 0.7, Color(0.2, 0.34, 0.12), Vector3.UP * 5.0, 12.0, Vector3(3, 2, 3))
+	shatter(at - Vector3.UP * 2.0, 16)
 	for s in _shots:
 		if is_instance_valid(s.node):
 			(s.node as Node).queue_free()
