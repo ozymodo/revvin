@@ -1,0 +1,42 @@
+; Engine configuration file.
+; It's best edited using the editor UI and not directly,
+; since the parameters that go here are not all obvious.
+;
+; Format:
+;   [section] ; section goes between []
+;   param=value ; assign values to parameters
+
+config_version=5
+
+[application]
+
+config/name="Mag Revvin"
+config/description="Game-jam demo of a compressed-air thruster car."
+run/main_scene="res://scenes/main.tscn"
+config/features=PackedStringArray("4.5", "Forward Plus")
+
+[autoload]
+
+Settings="*res://scripts/settings.gd"
+
+[display]
+
+window/size/viewport_width=1600
+window/size/viewport_height=900
+
+[physics]
+
+common/physics_ticks_per_second=120
+3d/physics_engine="Jolt Physics"
+common/physics_interpolation=true
+
+[rendering]
+
+anti_aliasing/quality/msaa_3d=2
+
+[shader_globals]
+
+car_pos={
+"type": "vec3",
+"value": Vector3(0, 0, 0)
+}
