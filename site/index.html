@@ -114,6 +114,7 @@ footer .wrap { display: flex; flex-wrap: wrap; gap: 12px 28px; justify-content: 
     <p class="sub">The car is a real physics model, not a sprite on rails: tyres, suspension, four rear thrusters, six perimeter jets, suction fans and the tanks and battery that feed them.</p>
     <div class="grid">
       <div class="card"><h3><i style="background:var(--thrust)"></i>Thrust and jets</h3><p>Boost on the rear thrusters, tap to jump, tap again to double jump or dodge-flip, hold to fly. A 200 L and a 400 L tank of air, refilled by a compressor.</p></div>
+      <div class="card"><h3><i style="background:var(--sky)"></i>MAG</h3><p>An electromagnet in the floor pan pulls the car onto whatever is below it, from up to 90 m. Drop out of the sky, cling to a wall, or come down hard and slam a shockwave through everything nearby.</p></div>
       <div class="card"><h3><i style="background:var(--jet)"></i>Style score</h3><p>Flips, barrel rolls, corkscrews, big air, wall rides and drifts. Every landing is graded from PERFECT to ROUGH, and banked tricks pump air back into your tanks.</p></div>
       <div class="card"><h3><i style="background:var(--fan)"></i>SKYWAY course</h3><p>A stunt course with loops, hoops, a half-pipe and checkpoints. Set a lap time, then try to beat it.</p></div>
       <div class="card"><h3><i style="background:var(--motor)"></i>A city gone wild</h3><p>Ruined arcology towers, glowing tech-trees, deer that bolt and birds that scatter. Scenery you can smash, and bosses that hunt you down.</p></div>
@@ -160,6 +161,7 @@ footer .wrap { display: flex; flex-wrap: wrap; gap: 12px 28px; justify-content: 
               <circle cx="688" cy="346" r="32" fill="rgba(0,0,0,.35)" stroke="#ff7359"/><text x="688" y="351" stroke="none">BRAKE</text>
               <circle cx="770" cy="220" r="36" fill="rgba(0,0,0,.35)" stroke="#e6613f"/><text x="770" y="225" stroke="none">JUMP</text>
               <circle cx="680" cy="258" r="32" fill="rgba(0,0,0,.35)" stroke="#f2a640"/><text x="680" y="263" stroke="none">BOOST</text>
+              <circle cx="600" cy="265" r="28" fill="rgba(0,0,0,.35)" stroke="#6bc7ff"/><text x="600" y="270" stroke="none" font-size="13">MAG</text>
               <circle cx="606" cy="342" r="26" fill="rgba(0,0,0,.35)" stroke="#8c78ff"/><text x="606" y="347" stroke="none" font-size="13">DRIFT</text>
               <text x="110" y="372" stroke="none" font-size="13" opacity=".7">STEER</text>
               <text x="422" y="136" stroke="none" fill="#73d9ff">drag the car to flip it</text>
@@ -171,7 +173,7 @@ footer .wrap { display: flex; flex-wrap: wrap; gap: 12px 28px; justify-content: 
           <tr><td>Drag the car</td><td>Grab the car and it tips the way you drag: up for a front flip, down for a back flip, sideways for a barrel roll, diagonals mix. On the road, the drag jumps first.</td></tr>
           <tr><td>Hold</td><td>Keep your finger down to hold the car at that angle. Twist a second finger around the first to spin it flat.</td></tr>
           <tr><td>Flick</td><td>Let go mid-swipe and the car keeps spinning at the speed of your flick.</td></tr>
-          <tr><td>Right thumb</td><td>GAS, BRAKE (reverse when stopped), JUMP (tap twice to double jump, hold to fly), BOOST, DRIFT.</td></tr>
+          <tr><td>Right thumb</td><td>GAS, BRAKE (reverse when stopped), JUMP (tap twice to double jump, hold to fly), BOOST, DRIFT, and MAG: hold to pull down onto the surface below, or onto a wall, and come down hard to slam.</td></tr>
           <tr><td>Anywhere else</td><td>Drag to look around. Top left: pause, camera, recover, fullscreen.</td></tr>
         </table>
       </div>
@@ -183,6 +185,7 @@ footer .wrap { display: flex; flex-wrap: wrap; gap: 12px 28px; justify-content: 
         <tr><td>A / D</td><td>Steer. In the air: yaw.</td></tr>
         <tr><td>Space / right mouse</td><td>Jump. Again in the air: double jump, or dodge-flip with a direction held. Hold to fly.</td></tr>
         <tr><td>Left mouse / Ctrl</td><td>Boost.</td></tr>
+        <tr><td>M / mouse 4</td><td>MAG: hold to pull the car down onto the surface below, or onto a wall. Come down hard to slam.</td></tr>
         <tr><td>Shift</td><td>Powerslide. In the air, hold it and steer to roll.</td></tr>
         <tr><td>Q / E</td><td>Air roll. On the road: side jets.</td></tr>
         <tr><td>Mouse</td><td>Look around. B or middle mouse looks back.</td></tr>
@@ -197,9 +200,10 @@ footer .wrap { display: flex; flex-wrap: wrap; gap: 12px 28px; justify-content: 
         <tr><td>Left stick</td><td>Steer. In the air: pitch and yaw.</td></tr>
         <tr><td>A</td><td>Jump, double jump, dodge-flip with the stick. Hold to fly.</td></tr>
         <tr><td>B</td><td>Boost.</td></tr>
+        <tr><td>R3</td><td>MAG: hold to pull the car down onto the surface below, or onto a wall. Come down hard to slam.</td></tr>
         <tr><td>X</td><td>Powerslide. In the air, hold it and steer to roll.</td></tr>
         <tr><td>LB / RB</td><td>Air roll. On the road: side jets.</td></tr>
-        <tr><td>Right stick · R3</td><td>Look around · look back.</td></tr>
+        <tr><td>Right stick</td><td>Look around. Pull it down to look back.</td></tr>
         <tr><td>Y · Menu</td><td>Camera · recover upright.</td></tr>
       </table>
     </div>

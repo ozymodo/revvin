@@ -25,6 +25,7 @@ const Combat := preload("res://scripts/combat/combat.gd")
 const Director := preload("res://scripts/enemies/director.gd")
 const PauseMenu := preload("res://scripts/ui/pause_menu.gd")
 const TouchControls := preload("res://scripts/ui/touch_controls.gd")
+const Mag := preload("res://scripts/mag.gd")
 const WeaponCases := preload("res://scripts/world/weapon_cases.gd")
 const Weapons := preload("res://scripts/combat/weapons.gd")
 const Wildlife := preload("res://scripts/world/wildlife.gd")
@@ -134,6 +135,11 @@ const TESTS := {
 	"crash": [Vector3(65, 0.6, -150), 0.0, 5.0, [2.0]],
 	# Flying (jump held), then the left stick forward: a front flip mid-flight.
 	"flystick": [Vector3(-120, 0.6, -300), 0.0, 9.0, [2.5, 3.0]],
+	# MAG: fly up ~30 m, then pull down onto three enemies (a slam), then a
+	# small hop with MAG on (too low and slow to slam).
+	"mag": [Vector3(-300, 0.6, 200), -PI / 2, 12.0, [4.7, 5.2, 5.5, 5.75, 5.85, 5.95, 6.15]],
+	# MAG from 12 m off a tower wall, wheels toward it: pulled on, then clings.
+	"magwall": [Vector3.ZERO, 0.0, 5.0, [0.4, 1.0, 2.0, 4.5]],
 	# Jump at speed, a dodge front flip, then a jump + double jump.
 	"hop": [Vector3(-300, 0.6, 200), -PI / 2, 10.0, [2.3, 4.6, 4.8, 7.6]],
 	# Rocket League bindings: W held through a jump (no pitch), a fresh W in
@@ -199,7 +205,7 @@ func _ready() -> void:
 		if _test != "course":
 			car.transform = Transform3D(Basis(Vector3.UP, TESTS[_test][1]), TESTS[_test][0])
 		_shot_times = TESTS[_test][3].duplicate()
-	if _test == "wallride":
+	if _test == "wallride" or _test == "magwall":
 		# The tallest tower with open ground in front of one of its faces.
 		var best: Array = []
 		for tw in level.city.towers:
@@ -211,7 +217,11 @@ func _ready() -> void:
 				if level.get_world_3d().direct_space_state.intersect_ray(q).is_empty():
 					best = [start, c]
 					break
-		if not best.is_empty():
+		if not best.is_empty() and _test == "magwall":
+			# 12 m out from the face and 15 m up, wheels toward the wall.
+			var face: Vector3 = best[0] - Vector3(45.0, 0.6, 0)
+			car.transform = Transform3D(Basis(Vector3.UP, Vector3.RIGHT, Vector3.FORWARD), face + Vector3(12.0, 15.0, 0))
+		elif not best.is_empty():
 			car.transform = Transform3D(Basis(Vector3.UP, PI * 0.5), best[0])
 	if _test == "streetramp":
 		var rs: Array = level.ramp_spots[3]
@@ -311,6 +321,15 @@ func _ready() -> void:
 	level.wrecking.pickups = pickups
 	level.wrecking.destruction = level.destruction
 	combat.wrecking = level.wrecking
+	var mag := Mag.new()
+	mag.car = car
+	mag.fx = fx
+	mag.sfx = sfx
+	mag.combat = combat
+	mag.tricks = tricks
+	mag.wrecking = level.wrecking
+	add_child(mag)
+	hud.mag = mag
 	level.destruction.car = car
 	level.destruction.tricks = tricks
 	level.destruction.fx = fx
@@ -381,6 +400,7 @@ func _ready() -> void:
 		level.destruction.smashed_object.connect(func(k: String, o: String, sp: float) -> void: print(">>> t=%.2f SMASH %s %s at %.0f km/h" % [_t, k, o, sp * 3.6]))
 		combat.enemy_rammed.connect(func(e: Node, d: float, f: bool) -> void: print(">>> t=%.2f %s %s for %.0f  (at %.0f km/h, spin %.1f rad/s)" % [_t, "FLIP HIT" if f else "RAM", e.kind, d, car.linear_velocity.length() * 3.6, car.angular_velocity.length()]))
 		combat.player_dodged.connect(func() -> void: print(">>> t=%.2f DODGED" % _t))
+		car.mag_slam.connect(func(at: Vector3, _n: Vector3, pw: float, r: float) -> void: print(">>> t=%.2f MAG SLAM power %.2f radius %.1f m at %s" % [_t, pw, r, at.snapped(Vector3.ONE * 0.1)]))
 
 	var audio := CarAudio.new()
 	audio.car = car
@@ -501,7 +521,10 @@ func _setup_input() -> void:
 	_action("boost", [KEY_CTRL], [JOY_BUTTON_B], [], [MOUSE_BUTTON_LEFT])
 	_action("handbrake", [KEY_SHIFT, KEY_C], [JOY_BUTTON_X])
 	_action("jet_assist", [KEY_Z], [JOY_BUTTON_LEFT_STICK])
-	_action("look_back", [KEY_B], [JOY_BUTTON_RIGHT_STICK], [], [MOUSE_BUTTON_MIDDLE])
+	# Look back stays on the keyboard and mouse; on a controller the right
+	# stick pulled down already looks behind, and R3 is MAG.
+	_action("look_back", [KEY_B], [], [], [MOUSE_BUTTON_MIDDLE])
+	_action("mag", [KEY_M], [JOY_BUTTON_RIGHT_STICK], [], [MOUSE_BUTTON_XBUTTON1])
 	_action("look_left", [], [], [[JOY_AXIS_RIGHT_X, -1.0]])
 	_action("look_right", [], [], [[JOY_AXIS_RIGHT_X, 1.0]])
 	_action("look_up", [], [], [[JOY_AXIS_RIGHT_Y, -1.0]])
@@ -912,6 +935,18 @@ func _plan(t: float) -> Dictionary:
 			}
 		"jump":
 			return {"throttle": 1.0 if v < 112.0 and not airborne else 0.0}
+		"magwall":
+			return {"mag": 1.0, "throttle": 1.0 if t > 2.5 else 0.0}
+		"mag":
+			var tap := func(at: float) -> float: return 1.0 if t > at and t < at + 0.06 else 0.0
+			if t >= 4.0 and t - get_physics_process_delta_time() < 4.0:
+				var g := Vector3(car.global_position.x, 0.0, car.global_position.z)
+				director.spawn("roller", g + Vector3(0, 1.3, 7), 1.2)
+				director.spawn("hopper", g + Vector3(-4, 0.5, 8), 1.0)
+				director.spawn("hopper", g + Vector3(0, 0.5, -18), 1.0)
+			return {"infinite_air": tap.call(0.2),
+				"lift": 1.0 if t > 0.5 and t < 4.2 else tap.call(8.0),
+				"mag": 1.0 if (t > 4.4 and t < 7.0) or (t > 8.25 and t < 9.5) else 0.0}
 		"hop":
 			var tap := func(at: float) -> float: return 1.0 if t > at and t < at + 0.06 else 0.0
 			return {"throttle": 1.0 if v < 110.0 else 0.3,
@@ -981,7 +1016,7 @@ func _physics_process(delta: float) -> void:
 	var plan := _plan(_t)
 	for a in ["throttle", "brake", "steer_left", "steer_right", "boost", "lift", "jet_assist",
 			"flip_forward", "flip_back", "roll_left", "roll_right", "handbrake", "swap_car",
-			"kb_nose_down", "air_roll_right", "infinite_air", "air_nose_down"]:
+			"kb_nose_down", "air_roll_right", "infinite_air", "air_nose_down", "mag"]:
 		if plan.get(a, 0.0) > 0.0:
 			Input.action_press(a, plan[a])
 		else:

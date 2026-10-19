@@ -560,11 +560,19 @@ func smash_points(points: int) -> void:
 		chain_left = maxf(chain_left, CHAIN_WINDOW * 0.5)
 
 
-## A kill. Ram and flip kills are stunts: they bank like a trick (pop-up,
+## MAG slam (mag.gd): banks like a trick, bigger for a bigger slam. The
+## impact it took to get there isn't a crash.
+func mag_slam(power: float, radius: float) -> void:
+	ignore_crash(0.5)
+	_bank("MAG SLAM", lerpf(250.0, 1600.0, power), lerpf(0.8, 1.0, power), 0.6, "%d m" % roundi(radius))
+
+
+## A kill. Ram, flip and slam kills are stunts: they bank like a trick (pop-up,
 ## chain, refill). Ray gun kills just add their points and keep the chain alive.
 func combat_kill(points: int, how: String, kind: String) -> void:
-	if how == "ram" or how == "flip":
-		_bank("FLIP SMASH" if how == "flip" else "RAM KILL", points * 4.0, NEUTRAL_Q if how == "ram" else 0.85, 0.8,
+	if how == "ram" or how == "flip" or how == "slam":
+		var label: String = {"ram": "RAM KILL", "flip": "FLIP SMASH", "slam": "SLAM KILL"}[how]
+		_bank(label, points * 4.0, NEUTRAL_Q if how == "ram" else 0.85, 0.8,
 			kind.to_upper(), car.linear_velocity.length())
 	else:
 		score += points

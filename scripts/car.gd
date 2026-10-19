@@ -15,6 +15,8 @@ signal trim_changed(trim: int)
 signal air_added(thrust: float, rocket: float, color: Color)
 ## Charge from a battery pickup has started flowing into the pack.
 signal charge_added(amount: float, color: Color)
+## MAG came down hard: `power` 0..1 sets the shockwave's `radius` (m).
+signal mag_slam(at: Vector3, normal: Vector3, power: float, radius: float)
 
 enum Trim { THRUST, ROCKET }
 ## How much the flight computer helps with the jets.
@@ -290,6 +292,31 @@ var _touch_flick := Vector3.ZERO
 var _touch_free_t := 0.0            # s the flight computer keeps its hands off after a flick
 var _touch_hop := false
 var _touch_pop := false
+
+# MAG: an electromagnet in the floor pan pulls the underside toward
+# whatever surface is below it (see _mag_pull). Hold it to drop out of the
+# sky, or point the wheels at a wall and get pulled onto it. Coming down
+# hard with it on slams the ground.
+const MAG_RANGE := 90.0             # m the field reaches
+const MAG_ACCEL := 30.0             # m/s² of pull at the far end of its reach...
+const MAG_ACCEL_NEAR := 52.0        # ...rising to this up close
+const MAG_CLING := 24.0             # m/s² pressing the tyres on once they're down
+const MAG_ALIGN_KP := 26.0          # turns the underside to face the surface
+const MAG_ALIGN_KD := 7.0
+const DRAIN_MAG := 0.004            # share of the pack per second while it's on
+const SLAM_MIN_SPEED := 15.0        # m/s into the surface for a slam...
+const SLAM_MIN_DROP := 12.0         # ...or this far a pull from engaging to impact
+const SLAM_RADIUS := Vector2(5.0, 26.0)   # shockwave radius at the weakest / strongest slam
+var mag_on := false                 # held and powered
+var mag_locked := false             # a surface is in reach: mag_point / mag_normal / mag_dist are valid
+var mag_point := Vector3.ZERO
+var mag_normal := Vector3.UP
+var mag_dist := 0.0
+var mag_charge := 0.0               # 0..1 how hard the last approach was going (for the effects)
+var _mag_air := false               # MAG was on at some point in this air time
+var _mag_from := 0.0                # distance to the surface when it first caught in the air
+var _mag_pre_v := Vector3.ZERO      # velocity the step before touching down
+var _mag_off_t := 0.0               # s since MAG was let go in the air
 
 var _jet_forces: Array[Vector3] = []
 var _thrust_dir := Vector3.FORWARD
@@ -607,6 +634,11 @@ func _physics_process(delta: float) -> void:
 	_jet_assist = Input.is_action_pressed("jet_assist")
 	_lift = Input.get_action_strength("lift")
 	_lift_held = _lift_held + delta if _lift > 0.1 else 0.0
+	mag_on = Input.is_action_pressed("mag") and battery > 0.02
+	if mag_on:
+		battery = maxf(0.0, battery - DRAIN_MAG * delta)
+		if grounded_wheels == 0:
+			flight_mode = false         # the magnet wins: stop hovering and come down
 	_read_air_controls(s_in)
 	if grounded_wheels == 0 and _handbrake:
 		s_in = 0.0                      # air roll held: left/right rolls instead of yawing
@@ -850,7 +882,97 @@ func _touch_spin(state: PhysicsDirectBodyState3D) -> void:
 
 ## True while touch has the attitude: jets and thrust vectoring add no torque.
 func _touch_owns_attitude() -> bool:
-	return touch_held or _touch_free_t > 0.0
+	return touch_held or _touch_free_t > 0.0 or (mag_on and mag_locked and grounded_wheels == 0)
+
+
+# ------------------------------------------------------------------ MAG
+
+## Finds the surface under the floor pan (straight down the car's own axis,
+## so a car tipped toward a wall finds the wall; else straight down), pulls
+## toward it, turns the wheels to face it, and presses the tyres on once
+## they touch. Detects the slam at touchdown.
+func _mag_pull(state: PhysicsDirectBodyState3D, space: PhysicsDirectSpaceState3D, b: Basis) -> void:
+	var com := state.transform * COM
+	var airborne := grounded_wheels == 0
+	if airborne:
+		_mag_pre_v = state.linear_velocity
+	elif _mag_air:
+		_land_slam(state)
+	mag_locked = false
+	if not mag_on:
+		mag_charge = move_toward(mag_charge, 0.0, state.step * 3.0)
+		# Let go well before the ground: no slam (a late release still counts).
+		_mag_off_t += state.step
+		if not airborne or _mag_off_t > 0.35:
+			_mag_air = false
+		return
+	_mag_off_t = 0.0
+	var hit := {}
+	for dir in [-b.y, Vector3.DOWN]:
+		var q := PhysicsRayQueryParameters3D.create(com, com + dir * MAG_RANGE, collision_mask, [get_rid()])
+		hit = space.intersect_ray(q)
+		if not hit.is_empty():
+			break
+	if hit.is_empty():
+		return
+	mag_locked = true
+	mag_point = hit.position
+	mag_normal = hit.normal
+	mag_dist = com.distance_to(mag_point)
+
+	if not airborne:
+		# Clinging: the tyres pressed onto whatever they're on, walls and
+		# loops included.
+		state.apply_central_force(-ground_normal() * mass * MAG_CLING)
+		return
+
+	if not _mag_air:
+		_mag_air = true
+		_mag_from = mag_dist
+	var near := 1.0 - clampf(mag_dist / MAG_RANGE, 0.0, 1.0)
+	# Pull half toward the point under the car and half straight at the
+	# surface, so it lands square instead of skating along it.
+	var pull := ((mag_point - com).normalized() - mag_normal).normalized()
+	state.apply_central_force(pull * mass * lerpf(MAG_ACCEL, MAG_ACCEL_NEAR, near))
+	# Moving away from the surface (still rising off a jump): the field
+	# brakes that first, so it turns round quickly.
+	var away := state.linear_velocity.dot(mag_normal)
+	if away > 0.0:
+		state.apply_central_force(-mag_normal * mass * minf(away * 6.0, 40.0))
+	mag_charge = clampf(maxf(-state.linear_velocity.dot(mag_normal) / 40.0, near * 0.5), 0.0, 1.0)
+	# Wheels toward the surface. Yaw stays free (steer still turns the car).
+	if not touch_held and _dodge_t <= 0.0:
+		var c := b.y.cross(mag_normal)
+		var sn := c.length()
+		var d := b.y.dot(mag_normal)
+		var err := Vector3.ZERO
+		if sn > 1e-4:
+			err = c / sn * atan2(sn, d)
+		elif d < 0.0:
+			err = b.z * PI               # upside down over it: roll over
+		var e := b.transposed() * err
+		var w := _local_angular(state)
+		var tau := Vector3(_inertia.x * (MAG_ALIGN_KP * e.x - MAG_ALIGN_KD * w.x), 0.0,
+			_inertia.z * (MAG_ALIGN_KP * e.z - MAG_ALIGN_KD * w.z))
+		state.apply_torque(b * tau)
+
+
+## Wheels down after a MAG approach: a fast hit or a long pull slams.
+## The magnet soaks up the impact, so the car sticks the landing.
+func _land_slam(state: PhysicsDirectBodyState3D) -> void:
+	_mag_air = false
+	var n := ground_normal()
+	var into := -_mag_pre_v.dot(n)
+	var drop := _mag_from
+	_mag_from = 0.0
+	if into < SLAM_MIN_SPEED and drop < SLAM_MIN_DROP:
+		return
+	var power := clampf(maxf((into - 10.0) / 50.0, drop / 90.0), 0.12, 1.0)
+	var v := state.linear_velocity
+	if v.dot(n) < 0.0:
+		state.linear_velocity = v - n * v.dot(n)
+	var at := state.transform.origin - n * 0.3
+	mag_slam.emit.call_deferred(at, n, power, lerpf(SLAM_RADIUS.x, SLAM_RADIUS.y, power))
 
 
 func can_swap_trim() -> bool:
@@ -1337,6 +1459,7 @@ func _integrate_forces(state: PhysicsDirectBodyState3D) -> void:
 		_pending_dodge = Vector3.ZERO
 		_jumps = 0
 		touch_held = false
+		_mag_air = false
 		_touch_flick = Vector3.ZERO
 		_touch_free_t = 0.0
 		reset_physics_interpolation.call_deferred()
@@ -1379,6 +1502,7 @@ func _integrate_forces(state: PhysicsDirectBodyState3D) -> void:
 
 	_rear_thrusters(state, b, dt)
 	_perimeter_jets(state, b, g, dt)
+	_mag_pull(state, space, b)
 	_touch_spin(state)
 
 
@@ -1769,7 +1893,7 @@ func _perimeter_jets(state: PhysicsDirectBodyState3D, b: Basis, g: float, dt: fl
 			vy_target = CLIMB_RATE * _lift if _lift > 0.05 else -clampf(altitude * 0.6 + 1.0, 1.5, 8.0)
 			if _jet_assist:
 				vy_target = -10.0
-		elif v.y < -5.0 and altitude < 12.0 and up.y > 0.5:
+		elif v.y < -5.0 and altitude < 12.0 and up.y > 0.5 and not mag_on:
 			vy_target = -3.0
 		if not is_nan(vy_target):
 			var f_req := mass * (g + VY_GAIN * (vy_target - v.y))

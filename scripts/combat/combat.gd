@@ -627,6 +627,21 @@ func beam_damage(target: Node, amount: float, at: Vector3, show: bool) -> void:
 	target.take_damage(amount, "gun")
 
 
+## MAG slam: everything inside the shockwave takes a hit (hardest at the
+## centre) and is thrown outward and up.
+func slam(at: Vector3, radius: float, dmg: float) -> void:
+	for e in enemies():
+		var d: float = e.global_position.distance_to(at) - e.radius
+		if d >= radius:
+			continue
+		var k := 1.0 - maxf(d, 0.0) / radius
+		var out: Vector3 = e.global_position - at
+		out.y = 0.0
+		var push := (out.normalized() + Vector3.UP * 0.6).normalized()
+		e.apply_central_impulse(push * minf(e.mass, 600.0) * (1.5 if e.boss else 5.0) * k)
+		_hurt_enemy(e, dmg * (0.35 + 0.65 * k), at, "slam", Color(0.42, 0.78, 1.0))
+
+
 func _hurt_enemy(e: Node, dmg: float, at: Vector3, how: String, color := Color(0.75, 1.0, 0.7), crit := false) -> void:
 	var push: Vector3 = (e.global_position - at).normalized() + Vector3.UP * 0.3
 	e.apply_central_impulse(push.normalized() * minf(e.mass, 600.0) * (0.3 if e.boss else 2.5))

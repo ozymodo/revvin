@@ -22,6 +22,7 @@ var course: Node                    # track/course.gd
 var tricks: Tricks
 var combat: Node                    # combat/combat.gd
 var director: Node                  # enemies/director.gd
+var mag: Node                       # mag.gd
 var boss: Node                      # the beast boss hunting us (world/wildlife.gd), or null
 var _boss_shown := 1.0
 var show_help: bool = Settings.get_value("show_help")
@@ -51,6 +52,7 @@ const HELP_KBM := [
 	["LMB / Ctrl", "boost (rear thrusters)"],
 	["Shift", "powerslide · in air: hold + A/D to roll"],
 	["Q / E", "air roll left / right · road: side jets"],
+	["M / Mouse 4", "MAG: pull to the surface below · slam"],
 	["Mouse", "look around · MMB / B: look back"],
 	["Arrows", "flip stick (old style) · ↓ road: press down"],
 	["W+S", "at a stop: launch control / burnout"],
@@ -72,7 +74,8 @@ const HELP_PAD := [
 	["B", "boost (rear thrusters)"],
 	["X", "powerslide · in air: hold + stick to roll"],
 	["LB / RB", "air roll left / right · road: side jets"],
-	["R stick", "look around · R3: look back"],
+	["R3", "MAG: pull to the surface below · slam"],
+	["R stick", "look around · pull down: look back"],
 	["Y", "camera (chase / close / far / hood)"],
 	["L3", "jet assist: stop + turn / descend"],
 	["D-pad ↑", "jets AUTO / HYBRID / FULL"],
@@ -315,6 +318,9 @@ func _draw() -> void:
 		_text(Vector2(sx, sy + 232), "GRIP", 12, C_DIM)
 		_bar(Rect2(sx, sy + 242, 120, 8), 1.0 - car.tyre_slip, C_FAN if car.tyre_slip < 0.3 else C_WARN)
 
+	if car.mag_on:
+		_mag_readout(sc)
+
 	# ---------------- centre prompts
 	var msg := ""
 	var msg2 := ""
@@ -477,6 +483,23 @@ static func _thousands(n: int) -> String:
 		out = "," + t.substr(t.length() - 3) + out
 		t = t.substr(0, t.length() - 3)
 	return t + out
+
+
+## MAG on: what it's locked to, just above the speed panel.
+func _mag_readout(sc: Vector2) -> void:
+	var ready: bool = mag != null and mag.slam_ready()
+	var c := Color(1.0, 0.62, 0.25) if ready else Color(0.42, 0.78, 1.0)
+	var t := "MAG  ·  SLAM READY" if ready else "MAG"
+	if car.mag_locked and car.grounded_wheels == 0:
+		t += "  ·  %d m" % roundi(car.mag_dist)
+	elif car.mag_locked:
+		t += "  ·  CLING"
+	else:
+		t += "  ·  no surface in range"
+	var r := Rect2(sc.x - 150, sc.y - 152, 300, 26)
+	draw_rect(r, Color(c, 0.18 + 0.1 * sin(_time * 18.0)))
+	draw_rect(r, c, false, 1.5)
+	_text(r.position + Vector2(0, 18), t, 14, C_TEXT, HORIZONTAL_ALIGNMENT_CENTER, r.size.x)
 
 
 ## Touch layout: thin thrust / rocket / battery bars, top left.

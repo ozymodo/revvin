@@ -204,6 +204,27 @@ func boom(pos: Vector3) -> void:
 		_note(0, 500.0, 0.0, 0.6, 0.25 * v, -30.0, true)
 
 
+## MAG switching on: a rising electric whine.
+func mag_on() -> void:
+	_note(0, 110.0, 0.0, 0.25, 0.16, 19.0)
+	_note(0, 2400.0, 0.0, 0.12, 0.05, -12.0, true)
+
+
+## MAG holding: short bursts of static, `k` 0.5..1.5 with the pull.
+func mag_crackle(k: float) -> void:
+	_note(0, randf_range(1800.0, 4200.0), 0.0, randf_range(0.02, 0.05), 0.04 * k, 0.0, true)
+	if randf() < 0.35:
+		_note(0, 98.0, 0.0, 0.12, 0.05 * k, 0.0)
+
+
+## MAG slam: a deep thump, a crack of discharge and the static after it.
+func mag_slam(power: float) -> void:
+	_note(0, lerpf(70.0, 45.0, power), 0.0, 0.6 + power * 0.5, 0.35 + power * 0.15, -14.0)
+	_note(0, 900.0, 0.0, 0.35, 0.22 + power * 0.1, -24.0, true)
+	_note(0, 3000.0, 0.03, 0.25 + power * 0.3, 0.1, -8.0, true)
+	_note(7, 220.0, 0.05, 0.4, 0.08, 12.0)
+
+
 func rotation(count: int) -> void:
 	_note(minf(count * 3.0, 15.0), 880.0, 0.0, 0.09, 0.14, 2.0)
 

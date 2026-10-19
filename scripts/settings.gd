@@ -58,7 +58,7 @@ const REBINDABLE := [
 	["air_roll_left", "Air roll left"], ["air_roll_right", "Air roll right"],
 	["flip_forward", "Flip stick forward"], ["flip_back", "Flip stick back"],
 	["roll_left", "Flip stick left"], ["roll_right", "Flip stick right"],
-	["look_back", "Look back"], ["camera", "Change camera"], ["jet_mode", "Jet mode"],
+	["mag", "MAG (pull to surface)"], ["look_back", "Look back"], ["camera", "Change camera"], ["jet_mode", "Jet mode"],
 	["jet_assist", "Jet assist"], ["swap_trim", "Swap trim"], ["swap_car", "Swap car"],
 	["fans", "Suction fans"], ["xray", "X-ray"], ["infinite_air", "Infinite air"],
 	["reset", "Recover car"], ["respawn", "Respawn at checkpoint"],

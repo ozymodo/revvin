@@ -2,7 +2,8 @@ extends Control
 ## On-screen controls for phones and tablets, all drawn in _draw().
 ##
 ##   left thumb   floating stick: steer · in the air, pitch and yaw
-##   right thumb  GAS, BRAKE (reverse), JUMP (hold to fly), BOOST, DRIFT
+##   right thumb  GAS, BRAKE (reverse), JUMP (hold to fly), BOOST, DRIFT,
+##                MAG (hold: pull to the surface below, slam)
 ##   top left     pause menu, camera, recover, fullscreen
 ##   the car      grab it and drag: it tips the way you drag (up = front
 ##                flip, down = back flip, sideways = barrel roll, diagonals
@@ -39,6 +40,7 @@ var _buttons := [
 	["jump", "lift", "JUMP", Vector2(1, 1), Vector2(-74, -170), 36.0, Color(0.9, 0.38, 0.26)],
 	["boost", "boost", "BOOST", Vector2(1, 1), Vector2(-164, -132), 32.0, Color(0.95, 0.65, 0.25)],
 	["drift", "handbrake", "DRIFT", Vector2(1, 1), Vector2(-238, -48), 26.0, Color(0.55, 0.47, 1.0)],
+	["mag", "mag", "MAG", Vector2(1, 1), Vector2(-250, -128), 28.0, Color(0.42, 0.78, 1.0)],
 	["menu", "", "II", Vector2(0, 0), Vector2(28, 28), 20.0, Color.WHITE],
 	["camera", "camera", "CAM", Vector2(0, 0), Vector2(76, 28), 20.0, Color.WHITE],
 	["reset", "reset", "", Vector2(0, 0), Vector2(124, 28), 20.0, Color.WHITE],
