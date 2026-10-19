@@ -280,6 +280,16 @@ var infinite_air := false
 var _jet_assist := false
 var _handbrake := false
 var _ground_time := 0.0
+# Touch (phones): grab the car and drag it round (ui/touch_controls.gd).
+const TOUCH_GAIN := 14.0            # 1/s: how hard the car chases the finger's attitude
+const TOUCH_MAX_SPIN := 16.0        # rad/s, held or flicked
+const TOUCH_POP := 4.5              # m/s up when grabbed on the road with no jets to jump
+var touch_held := false
+var _touch_target := Basis()
+var _touch_flick := Vector3.ZERO
+var _touch_free_t := 0.0            # s the flight computer keeps its hands off after a flick
+var _touch_hop := false
+var _touch_pop := false
 
 var _jet_forces: Array[Vector3] = []
 var _thrust_dir := Vector3.FORWARD
@@ -666,6 +676,7 @@ func _physics_process(delta: float) -> void:
 			request_reset(true)
 
 	_update_jump(delta)
+	_update_touch(delta)
 
 	# Flight mode: entered by holding lift (a tap is just a jump), left once
 	# the car has settled.
@@ -748,12 +759,7 @@ func _update_jump(delta: float) -> void:
 	if not Input.is_action_just_pressed("lift") or not jets_available() or rocket_tank < 0.02:
 		return
 	if grounded_wheels >= 2 and _jumps == 0:
-		_burst_dv = JUMP_DV
-		_burst_t = BURST_TIME
-		_jumps = 1
-		_since_jump = 0.0
-		fan_spin = 0.0                  # fans let go at once or they'd hold it down
-		jump_flash = 1.0
+		_ground_jump()
 	elif grounded_wheels == 0 and _jumps == 1 and _since_jump < DOUBLE_WINDOW:
 		_jumps = 2
 		jump_flash = 1.0
@@ -770,6 +776,81 @@ func _update_jump(delta: float) -> void:
 		_burst_dv = DOUBLE_DV
 		_burst_t = BURST_TIME
 		jump_flash = 1.0
+
+
+func _ground_jump() -> void:
+	_burst_dv = JUMP_DV
+	_burst_t = BURST_TIME
+	_jumps = 1
+	_since_jump = 0.0
+	fan_spin = 0.0                  # fans let go at once or they'd hold it down
+	jump_flash = 1.0
+
+
+# ------------------------------------------------------------------ touch grab
+
+## A finger has landed on the car: from now on it chases _touch_target.
+func touch_grab() -> void:
+	touch_held = true
+	_touch_flick = Vector3.ZERO
+	_touch_target = global_basis.orthonormalized()
+
+
+## Turns the held attitude by a world-space rotation vector (axis * angle).
+func touch_rotate(rotvec: Vector3) -> void:
+	var a := rotvec.length()
+	if touch_held and a > 1e-6:
+		_touch_target = (Basis(rotvec / a, a) * _touch_target).orthonormalized()
+
+
+## Let go. A flick leaves the car spinning at `spin` (world rad/s), and the
+## flight computer stands back a moment so it doesn't stop the spin dead.
+func touch_release(spin := Vector3.ZERO) -> void:
+	touch_held = false
+	if spin.length() > 0.5:
+		_touch_flick = spin.limit_length(TOUCH_MAX_SPIN)
+		_touch_free_t = 1.5
+
+
+## Dragging the car on the road pops it into the air first: a normal jump
+## when the jets can, otherwise (Thrust trim, or lying on its roof) a hop.
+func touch_hop() -> void:
+	_touch_hop = true
+
+
+func _update_touch(delta: float) -> void:
+	_touch_free_t = maxf(0.0, _touch_free_t - delta)
+	if _touch_free_t < 1.2 and grounded_wheels >= 3:
+		_touch_free_t = 0.0
+	if not _touch_hop:
+		return
+	_touch_hop = false
+	if grounded_wheels >= 2 and _jumps == 0 and jets_available() and rocket_tank >= 0.02 and global_basis.y.y > 0.5:
+		_ground_jump()
+	elif grounded_wheels > 0:
+		_touch_pop = true
+
+
+## Body rates while a finger holds the car, or the flick it was let go with.
+func _touch_spin(state: PhysicsDirectBodyState3D) -> void:
+	if _touch_pop:
+		_touch_pop = false
+		state.linear_velocity += Vector3.UP * TOUCH_POP
+	if touch_held:
+		var q := (_touch_target * state.transform.basis.orthonormalized().inverse()).get_rotation_quaternion()
+		var ang := q.get_angle()
+		if ang > PI:
+			ang -= TAU
+		var w := q.get_axis() * ang * TOUCH_GAIN if absf(ang) > 1e-4 else Vector3.ZERO
+		state.angular_velocity = w.limit_length(TOUCH_MAX_SPIN)
+	elif _touch_flick != Vector3.ZERO:
+		state.angular_velocity = _touch_flick
+		_touch_flick = Vector3.ZERO
+
+
+## True while touch has the attitude: jets and thrust vectoring add no torque.
+func _touch_owns_attitude() -> bool:
+	return touch_held or _touch_free_t > 0.0
 
 
 func can_swap_trim() -> bool:
@@ -1255,6 +1336,9 @@ func _integrate_forces(state: PhysicsDirectBodyState3D) -> void:
 		_dodge_t = 0.0
 		_pending_dodge = Vector3.ZERO
 		_jumps = 0
+		touch_held = false
+		_touch_flick = Vector3.ZERO
+		_touch_free_t = 0.0
 		reset_physics_interpolation.call_deferred()
 		return
 
@@ -1295,6 +1379,7 @@ func _integrate_forces(state: PhysicsDirectBodyState3D) -> void:
 
 	_rear_thrusters(state, b, dt)
 	_perimeter_jets(state, b, g, dt)
+	_touch_spin(state)
 
 
 func _suspension_and_tyres(state: PhysicsDirectBodyState3D, space: PhysicsDirectSpaceState3D, xf: Transform3D, dt: float) -> void:
@@ -1580,6 +1665,9 @@ func _rear_thrusters(state: PhysicsDirectBodyState3D, b: Basis, dt: float) -> vo
 			JetMode.FULL:
 				tau_x = -_inertia.x * MANUAL_ACCEL.x * _spin.x
 				tau_y = -_inertia.y * MANUAL_ACCEL.y * _steer
+		if _touch_owns_attitude():
+			tau_x = 0.0
+			tau_y = 0.0
 		gimbal_pitch = asin(clampf(-tau_x / arm / total, -sin(THRUSTER_GIMBAL), sin(THRUSTER_GIMBAL)))
 		gimbal_yaw = asin(clampf(tau_y / arm / total, -sin(THRUSTER_GIMBAL), sin(THRUSTER_GIMBAL)))
 	_thrust_dir = Vector3(sin(gimbal_yaw) * cos(gimbal_pitch), sin(gimbal_pitch), -cos(gimbal_yaw) * cos(gimbal_pitch))
@@ -1689,6 +1777,8 @@ func _perimeter_jets(state: PhysicsDirectBodyState3D, b: Basis, g: float, dt: fl
 			# smooth through knife-edge and works (gimballed) when inverted.
 			collective = f_req * up.y / (up.y * up.y + 0.05)
 
+	if _touch_owns_attitude() and (airborne or flight_mode):
+		tau = Vector3.ZERO
 	if collective == 0.0 and tau == Vector3.ZERO and brake == 0.0 and side == 0.0:
 		return
 

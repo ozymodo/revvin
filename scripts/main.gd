@@ -24,6 +24,7 @@ const AirPickups := preload("res://scripts/world/air_pickups.gd")
 const Combat := preload("res://scripts/combat/combat.gd")
 const Director := preload("res://scripts/enemies/director.gd")
 const PauseMenu := preload("res://scripts/ui/pause_menu.gd")
+const TouchControls := preload("res://scripts/ui/touch_controls.gd")
 const WeaponCases := preload("res://scripts/world/weapon_cases.gd")
 const Weapons := preload("res://scripts/combat/weapons.gd")
 const Wildlife := preload("res://scripts/world/wildlife.gd")
@@ -227,7 +228,7 @@ func _ready() -> void:
 		car.jet_mode = Car.JetMode.AUTO   # the scripted scenarios were written for the flight computer
 	if _jets_arg >= 0:
 		car.jet_mode = _jets_arg as Car.JetMode
-	if _test == "" and not DisplayServer.get_name() == "headless":
+	if _test == "" and not DisplayServer.get_name() == "headless" and not OS.has_feature("web"):
 		Input.mouse_mode = Input.MOUSE_MODE_CAPTURED   # mouse looks around; Esc frees it
 
 	var skids := SkidMarks.new()
@@ -266,12 +267,20 @@ func _ready() -> void:
 	hud.course = course
 	hud.tricks = tricks
 	layer.add_child(hud)
-	hud.visible = Settings.get_value("show_hud")
+	hud.visible = Settings.get_value("show_hud") and OS.get_environment("NOHUD") != "1"   # NOHUD=1: clean screenshots
 	Settings.changed.connect(_on_setting)
 	_menu = PauseMenu.new()
 	_menu.restart_run = func() -> void: course.restart()
 	_menu.recover_car = _respawn
 	add_child(_menu)
+	var touch_layer := CanvasLayer.new()
+	touch_layer.layer = 10
+	add_child(touch_layer)
+	var touch := TouchControls.new()
+	touch.car = car
+	touch.cam = cam
+	touch.open_menu = _menu.open
+	touch_layer.add_child(touch)
 	_connect_style()
 
 	combat = Combat.new()
@@ -453,7 +462,7 @@ func _unhandled_input(event: InputEvent) -> void:
 		# Esc: pause menu (resume, settings, quit).
 		get_viewport().set_input_as_handled()
 		_menu.open()
-	elif event is InputEventMouseButton and event.pressed and _test == "":
+	elif event is InputEventMouseButton and event.pressed and _test == "" and not Settings.touch_mode:
 		Input.mouse_mode = Input.MOUSE_MODE_CAPTURED
 	elif event.is_action_pressed("restart_run"):
 		course.restart()

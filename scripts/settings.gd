@@ -67,8 +67,19 @@ const REBINDABLE := [
 ## Keyboard pitch in the air follows the drive keys.
 const MIRRORS := {"throttle": "kb_nose_down", "brake": "kb_nose_up"}
 
+## Phones and tablets get lighter graphics by default (the player's saved
+## choices still win). See also ui/touch_controls.gd.
+const MOBILE_DEFAULTS := {
+	"preset": 4, "aa": 0, "shadows": 1, "ssao": false, "glow": false,
+	"volumetric_fog": false, "lod": 0, "render_scale": 0.6, "max_fps": 2,
+	"show_help": false,
+}
+
 var values := DEFAULTS.duplicate(true)
 var testing := false
+## Set by the touch controls once they're in use: no mouse capture, and
+## the HUD switches to its compact layout.
+var touch_mode := false
 
 ## Set by the level / main scene so graphics changes reach them.
 var environment: Environment
@@ -83,6 +94,9 @@ func _ready() -> void:
 		if a.begins_with("--test="):
 			testing = true
 	_make_buses()
+	if is_mobile():
+		values.merge(MOBILE_DEFAULTS, true)
+		Engine.max_physics_steps_per_frame = 4    # a slow frame slows the game rather than snowballing
 	if not testing:
 		_load()
 	apply_audio()
@@ -95,6 +109,12 @@ func _notification(what: int) -> void:
 		AudioServer.set_bus_mute(0, true)
 	elif what == NOTIFICATION_APPLICATION_FOCUS_IN:
 		AudioServer.set_bus_mute(0, values.master_volume <= 0.001)
+
+
+## A phone or tablet browser (an iPad may claim to be a Mac; its first
+## touch switches the controls on instead).
+static func is_mobile() -> bool:
+	return OS.has_feature("web_android") or OS.has_feature("web_ios") or OS.has_feature("mobile")
 
 
 func get_value(key: String) -> Variant:
@@ -202,6 +222,9 @@ func air_gain() -> float:
 func apply_display() -> void:
 	if DisplayServer.get_name() == "headless":
 		return
+	if OS.has_feature("web"):
+		_apply_render_scale()           # the page owns the window
+		return
 	match int(values.window_mode):
 		0:
 			DisplayServer.window_set_mode(DisplayServer.WINDOW_MODE_WINDOWED)
@@ -220,6 +243,10 @@ func apply_display() -> void:
 			DisplayServer.window_set_mode(DisplayServer.WINDOW_MODE_EXCLUSIVE_FULLSCREEN)
 	DisplayServer.window_set_vsync_mode([DisplayServer.VSYNC_DISABLED, DisplayServer.VSYNC_ENABLED,
 		DisplayServer.VSYNC_ADAPTIVE, DisplayServer.VSYNC_MAILBOX][int(values.vsync)])
+	_apply_render_scale()
+
+
+func _apply_render_scale() -> void:
 	Engine.max_fps = FPS_CAPS[clampi(int(values.max_fps), 0, FPS_CAPS.size() - 1)]
 	var vp := get_viewport()
 	vp.scaling_3d_mode = [Viewport.SCALING_3D_MODE_BILINEAR, Viewport.SCALING_3D_MODE_FSR,
@@ -231,6 +258,10 @@ func apply_display() -> void:
 
 ## F11: flips between windowed and borderless fullscreen.
 func toggle_fullscreen() -> void:
+	if OS.has_feature("web"):
+		var full := DisplayServer.window_get_mode() == DisplayServer.WINDOW_MODE_FULLSCREEN
+		DisplayServer.window_set_mode(DisplayServer.WINDOW_MODE_WINDOWED if full else DisplayServer.WINDOW_MODE_FULLSCREEN)
+		return
 	set_value("window_mode", 0 if values.window_mode != 0 else 1)
 	save()
 
@@ -330,7 +361,7 @@ static func event_name(e: InputEvent) -> String:
 		return "—"
 	if e is InputEventKey:
 		var pk := (e as InputEventKey).physical_keycode
-		if DisplayServer.get_name() != "headless":
+		if DisplayServer.get_name() != "headless" and not OS.has_feature("web"):
 			pk = DisplayServer.keyboard_get_keycode_from_physical(pk)    # the key's label on this layout
 		return OS.get_keycode_string(pk)
 	if e is InputEventMouseButton:

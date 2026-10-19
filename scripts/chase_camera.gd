@@ -60,6 +60,13 @@ func _unhandled_input(event: InputEvent) -> void:
 		_mouse_idle = 0.0
 
 
+## Touch: a drag on open screen looks around, like the mouse.
+func touch_look(rel: Vector2) -> void:
+	_mouse_look.x = wrapf(_mouse_look.x - rel.x * MOUSE_SENS.x * 1.6, -PI, PI)
+	_mouse_look.y = clampf(_mouse_look.y - rel.y * MOUSE_SENS.y * 1.6, -0.35, 1.0)
+	_mouse_idle = 0.0
+
+
 ## Right stick: points the camera that way round the car (down = behind),
 ## like Rocket League. Mouse: orbits freely, swings back once left alone.
 func _update_look(delta: float) -> void:

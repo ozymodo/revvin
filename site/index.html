@@ -1,0 +1,238 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Mag Revvin</title>
+<meta name="description" content="Game-jam demo of a compressed-air thruster car: flips, wall rides, jet flight and beasts in an overgrown cyberpunk city. Plays in the browser, on desktop and phone.">
+<meta property="og:title" content="Mag Revvin">
+<meta property="og:description" content="Flip, fly and wall-ride a compressed-air thruster car through an overgrown cyberpunk city. Play it in your browser.">
+<meta property="og:image" content="shots/1.jpg">
+<meta name="theme-color" content="#121214">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Chakra+Petch:wght@500;700&family=Inter:wght@400;600&display=swap" rel="stylesheet">
+<style>
+:root {
+  --bg: #121214;
+  --panel: #1b1c20;
+  --line: #2c2e34;
+  --text: #e8e6e0;
+  --dim: #9a9aa2;
+  --thrust: #f2a640;
+  --jet: #e6613f;
+  --fan: #54bf94;
+  --motor: #8c78ff;
+  --sky: #73d9ff;
+}
+* { box-sizing: border-box; }
+html { scroll-behavior: smooth; }
+body {
+  margin: 0; background: var(--bg); color: var(--text);
+  font: 400 17px/1.6 Inter, system-ui, sans-serif;
+}
+a { color: var(--sky); }
+h1, h2, h3 { font-family: "Chakra Petch", system-ui, sans-serif; font-weight: 700; line-height: 1.15; margin: 0; }
+.wrap { max-width: 1120px; margin: 0 auto; padding: 0 16px; }
+
+/* hero */
+.hero { position: relative; min-height: 88vh; display: flex; align-items: flex-end; overflow: hidden; }
+.hero img { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; object-position: 50% 60%; }
+.hero::after { content: ""; position: absolute; inset: 0;
+  background: linear-gradient(180deg, rgba(18,18,20,.15) 0%, rgba(18,18,20,.35) 45%, var(--bg) 100%); }
+.hero .wrap { position: relative; z-index: 1; padding-bottom: 56px; width: 100%; }
+.tag { display: inline-block; font: 600 13px/1 Inter, sans-serif; letter-spacing: .12em; text-transform: uppercase;
+  color: var(--thrust); border: 1px solid rgba(242,166,64,.5); padding: 7px 10px; border-radius: 4px; background: rgba(18,18,20,.6); }
+.hero h1 { font-size: clamp(48px, 11vw, 112px); letter-spacing: .01em; margin: 18px 0 10px; text-shadow: 0 4px 30px rgba(0,0,0,.6); }
+.hero h1 span { color: var(--thrust); }
+.hero p.lede { font-size: clamp(18px, 2.4vw, 22px); max-width: 640px; margin: 0 0 28px; text-shadow: 0 2px 12px rgba(0,0,0,.7); }
+.cta { display: flex; flex-wrap: wrap; gap: 12px; align-items: center; }
+.btn { display: inline-flex; align-items: center; gap: 10px; text-decoration: none; font: 700 18px/1 "Chakra Petch", sans-serif;
+  letter-spacing: .04em; padding: 16px 26px; border-radius: 6px; border: 1px solid transparent; }
+.btn.play { background: var(--thrust); color: #1a1205; box-shadow: 0 6px 30px rgba(242,166,64,.35); }
+.btn.play:hover { background: #ffb85a; }
+.btn.ghost { color: var(--text); border-color: rgba(232,230,224,.35); background: rgba(18,18,20,.55); }
+.btn.ghost:hover { border-color: var(--text); }
+.note { color: var(--dim); font-size: 14px; margin-top: 14px; text-shadow: 0 1px 6px rgba(0,0,0,.8); }
+
+section { padding: 72px 0 0; }
+section h2 { font-size: clamp(28px, 4vw, 40px); margin-bottom: 8px; }
+section > .wrap > p.sub { color: var(--dim); max-width: 680px; margin: 0 0 32px; }
+
+/* features */
+.grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); gap: 14px; }
+.card { background: var(--panel); border: 1px solid var(--line); border-radius: 8px; padding: 20px; }
+.card h3 { font-size: 20px; margin-bottom: 6px; display: flex; align-items: center; gap: 10px; }
+.card h3 i { width: 10px; height: 10px; border-radius: 2px; display: inline-block; flex: none; }
+.card p { margin: 0; color: var(--dim); font-size: 15px; }
+
+/* gallery */
+.gallery { display: grid; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); gap: 10px; }
+.gallery img { width: 100%; aspect-ratio: 16/9; object-fit: cover; border-radius: 6px; display: block; border: 1px solid var(--line); }
+
+/* controls */
+.tabs { display: flex; gap: 6px; flex-wrap: wrap; margin-bottom: 14px; }
+.tabs button { font: 600 15px/1 Inter, sans-serif; color: var(--dim); background: transparent; border: 1px solid var(--line);
+  padding: 10px 14px; border-radius: 6px; cursor: pointer; }
+.tabs button[aria-selected="true"] { color: var(--bg); background: var(--text); border-color: var(--text); }
+.panel { display: none; }
+.panel.on { display: block; }
+table { width: 100%; border-collapse: collapse; background: var(--panel); border: 1px solid var(--line); border-radius: 8px; overflow: hidden; }
+td { padding: 11px 16px; border-top: 1px solid var(--line); vertical-align: top; font-size: 15px; }
+tr:first-child td { border-top: 0; }
+td:first-child { color: var(--thrust); font-weight: 600; white-space: nowrap; width: 1%; }
+.touch-demo { display: grid; grid-template-columns: 1fr; gap: 14px; }
+@media (min-width: 760px) { .touch-demo { grid-template-columns: 1.1fr 1fr; } }
+.phone { position: relative; aspect-ratio: 19.5/9; border-radius: 22px; border: 3px solid #3a3c44; overflow: hidden; background: #000; }
+.phone img { width: 100%; height: 100%; object-fit: cover; opacity: .75; }
+.phone svg { position: absolute; inset: 0; width: 100%; height: 100%; }
+
+footer { margin-top: 80px; padding: 32px 0 48px; border-top: 1px solid var(--line); color: var(--dim); font-size: 14px; }
+footer .wrap { display: flex; flex-wrap: wrap; gap: 12px 28px; justify-content: space-between; }
+</style>
+</head>
+<body>
+
+<header class="hero">
+  <img src="shots/1.jpg" alt="The car landing a perfect barrel roll on the SKYWAY, a golden ring of air flowing back into its tanks">
+  <div class="wrap">
+    <span class="tag">Game-jam demo · Godot 4.5</span>
+    <h1>MAG <span>REVVIN</span></h1>
+    <p class="lede">A compressed-air thruster car loose in an overgrown cyberpunk city. Boost, jump, fly on six jets, flip it, ride the walls, and outrun the beasts.</p>
+    <div class="cta">
+      <a class="btn play" href="play/">▶ Play in your browser</a>
+      <a class="btn ghost" href="https://github.com/ozymodo/revvin">Source on GitHub</a>
+    </div>
+    <p class="note">Works on desktop and on phones (hold it sideways). About a 13 MB download the first time; after that your browser keeps it cached.</p>
+  </div>
+</header>
+
+<main>
+<section>
+  <div class="wrap">
+    <h2>What's in the demo</h2>
+    <p class="sub">The car is a real physics model, not a sprite on rails: tyres, suspension, four rear thrusters, six perimeter jets, suction fans and the tanks and battery that feed them.</p>
+    <div class="grid">
+      <div class="card"><h3><i style="background:var(--thrust)"></i>Thrust and jets</h3><p>Boost on the rear thrusters, tap to jump, tap again to double jump or dodge-flip, hold to fly. A 200 L and a 400 L tank of air, refilled by a compressor.</p></div>
+      <div class="card"><h3><i style="background:var(--jet)"></i>Style score</h3><p>Flips, barrel rolls, corkscrews, big air, wall rides and drifts. Every landing is graded from PERFECT to ROUGH, and banked tricks pump air back into your tanks.</p></div>
+      <div class="card"><h3><i style="background:var(--fan)"></i>SKYWAY course</h3><p>A stunt course with loops, hoops, a half-pipe and checkpoints. Set a lap time, then try to beat it.</p></div>
+      <div class="card"><h3><i style="background:var(--motor)"></i>A city gone wild</h3><p>Ruined arcology towers, glowing tech-trees, deer that bolt and birds that scatter. Scenery you can smash, and bosses that hunt you down.</p></div>
+    </div>
+  </div>
+</section>
+
+<section>
+  <div class="wrap">
+    <h2>Screenshots</h2>
+    <p class="sub">Captured in-game at 1600×900.</p>
+    <div class="gallery">
+      <img src="shots/2.jpg" alt="A gorilla boss looming out of the haze" loading="lazy">
+      <img src="shots/3.jpg" alt="Air flowing back into the tanks after a perfect backflip" loading="lazy">
+      <img src="shots/4.jpg" alt="The car driving straight up the wall of a ruined tower" loading="lazy">
+      <img src="shots/5.jpg" alt="The car mid barrel roll above the road" loading="lazy">
+      <img src="shots/6.jpg" alt="A giant spider beast in the ruins" loading="lazy">
+      <img src="shots/1.jpg" alt="A perfect barrel roll landing beside the SKYWAY" loading="lazy">
+    </div>
+  </div>
+</section>
+
+<section id="controls">
+  <div class="wrap">
+    <h2>Controls</h2>
+    <p class="sub">The layout follows Rocket League. On a phone, the controls appear on screen as soon as the game loads.</p>
+    <div class="tabs" role="tablist">
+      <button role="tab" aria-selected="true" data-p="touch">Touch</button>
+      <button role="tab" aria-selected="false" data-p="kbm">Keyboard + mouse</button>
+      <button role="tab" aria-selected="false" data-p="pad">Controller</button>
+    </div>
+
+    <div class="panel on" id="touch">
+      <div class="touch-demo">
+        <div class="phone" aria-hidden="true">
+          <img src="shots/3.jpg" alt="">
+          <svg viewBox="0 0 844 390" fill="none" stroke-width="2">
+            <circle cx="110" cy="294" r="58" fill="rgba(0,0,0,.35)" stroke="rgba(255,255,255,.5)"/>
+            <circle cx="110" cy="294" r="24" fill="rgba(255,255,255,.35)"/>
+            <circle cx="422" cy="230" r="80" stroke="#73d9ff" stroke-dasharray="6 6"/>
+            <path d="M422 230 v-62 m-12 14 l12-14 12 14" stroke="#73d9ff" stroke-width="3"/>
+            <g font-family="Inter, sans-serif" font-size="15" font-weight="600" fill="#e8e6e0" text-anchor="middle">
+              <circle cx="782" cy="324" r="44" fill="rgba(0,0,0,.35)" stroke="#54bf94"/><text x="782" y="329" stroke="none">GAS</text>
+              <circle cx="688" cy="346" r="32" fill="rgba(0,0,0,.35)" stroke="#ff7359"/><text x="688" y="351" stroke="none">BRAKE</text>
+              <circle cx="770" cy="220" r="36" fill="rgba(0,0,0,.35)" stroke="#e6613f"/><text x="770" y="225" stroke="none">JUMP</text>
+              <circle cx="680" cy="258" r="32" fill="rgba(0,0,0,.35)" stroke="#f2a640"/><text x="680" y="263" stroke="none">BOOST</text>
+              <circle cx="606" cy="342" r="26" fill="rgba(0,0,0,.35)" stroke="#8c78ff"/><text x="606" y="347" stroke="none" font-size="13">DRIFT</text>
+              <text x="110" y="372" stroke="none" font-size="13" opacity=".7">STEER</text>
+              <text x="422" y="136" stroke="none" fill="#73d9ff">drag the car to flip it</text>
+            </g>
+          </svg>
+        </div>
+        <table>
+          <tr><td>Left thumb</td><td>Floating stick: steer. In the air it pitches the nose and yaws.</td></tr>
+          <tr><td>Drag the car</td><td>Grab the car and it tips the way you drag: up for a front flip, down for a back flip, sideways for a barrel roll, diagonals mix. On the road, the drag jumps first.</td></tr>
+          <tr><td>Hold</td><td>Keep your finger down to hold the car at that angle. Twist a second finger around the first to spin it flat.</td></tr>
+          <tr><td>Flick</td><td>Let go mid-swipe and the car keeps spinning at the speed of your flick.</td></tr>
+          <tr><td>Right thumb</td><td>GAS, BRAKE (reverse when stopped), JUMP (tap twice to double jump, hold to fly), BOOST, DRIFT.</td></tr>
+          <tr><td>Anywhere else</td><td>Drag to look around. Top left: pause, camera, recover, fullscreen.</td></tr>
+        </table>
+      </div>
+    </div>
+
+    <div class="panel" id="kbm">
+      <table>
+        <tr><td>W / S</td><td>Throttle, brake and reverse. In the air: pitch.</td></tr>
+        <tr><td>A / D</td><td>Steer. In the air: yaw.</td></tr>
+        <tr><td>Space / right mouse</td><td>Jump. Again in the air: double jump, or dodge-flip with a direction held. Hold to fly.</td></tr>
+        <tr><td>Left mouse / Ctrl</td><td>Boost.</td></tr>
+        <tr><td>Shift</td><td>Powerslide. In the air, hold it and steer to roll.</td></tr>
+        <tr><td>Q / E</td><td>Air roll. On the road: side jets.</td></tr>
+        <tr><td>Mouse</td><td>Look around. B or middle mouse looks back.</td></tr>
+        <tr><td>V · R · Esc</td><td>Camera · recover upright · pause menu and settings.</td></tr>
+        <tr><td>F1</td><td>Full key list in game.</td></tr>
+      </table>
+    </div>
+
+    <div class="panel" id="pad">
+      <table>
+        <tr><td>RT / LT</td><td>Throttle, brake and reverse.</td></tr>
+        <tr><td>Left stick</td><td>Steer. In the air: pitch and yaw.</td></tr>
+        <tr><td>A</td><td>Jump, double jump, dodge-flip with the stick. Hold to fly.</td></tr>
+        <tr><td>B</td><td>Boost.</td></tr>
+        <tr><td>X</td><td>Powerslide. In the air, hold it and steer to roll.</td></tr>
+        <tr><td>LB / RB</td><td>Air roll. On the road: side jets.</td></tr>
+        <tr><td>Right stick · R3</td><td>Look around · look back.</td></tr>
+        <tr><td>Y · Menu</td><td>Camera · recover upright.</td></tr>
+      </table>
+    </div>
+  </div>
+</section>
+
+<section>
+  <div class="wrap">
+    <h2>Ready?</h2>
+    <p class="sub">Drive through the START gate to begin a SKYWAY lap, or just go and explore. Tricks refill your air.</p>
+    <a class="btn play" href="play/">▶ Play Mag Revvin</a>
+  </div>
+</section>
+</main>
+
+<footer>
+  <div class="wrap">
+    <span>Mag Revvin: a game-jam demo built with Godot 4.5, Jolt physics and Blender.</span>
+    <a href="https://github.com/ozymodo/revvin">github.com/ozymodo/revvin</a>
+  </div>
+</footer>
+
+<script>
+document.querySelectorAll(".tabs button").forEach(function (b) {
+  b.addEventListener("click", function () {
+    document.querySelectorAll(".tabs button").forEach(function (x) { x.setAttribute("aria-selected", x === b); });
+    document.querySelectorAll(".panel").forEach(function (p) { p.classList.toggle("on", p.id === b.dataset.p); });
+  });
+});
+// Desktop visitors see their own controls first.
+if (!matchMedia("(pointer: coarse)").matches) {
+  document.querySelector('[data-p="kbm"]').click();
+}
+</script>
+</body>
+</html>

@@ -207,6 +207,8 @@ func _draw() -> void:
 		return
 	# Lay out on a virtual 1500x850 canvas so the HUD scales with the window.
 	var ui_scale := clampf(minf(size.x / 1500.0, size.y / 850.0), 0.55, 2.0)
+	if Settings.touch_mode:
+		ui_scale *= 1.35                # a phone screen is small and far from the eye
 	_ui = ui_scale
 	draw_set_transform(Vector2.ZERO, 0.0, Vector2.ONE * ui_scale)
 	var vp := size / ui_scale
@@ -226,86 +228,92 @@ func _draw() -> void:
 		_text(Vector2(x, sc.y - 4), labels[i], 12, C_DIM)
 		_bar(Rect2(x + 22, sc.y - 13, 56, 8), car.motor_load[i], C_MOTOR)
 
+	var compact := Settings.touch_mode
+	if compact:
+		# Touch: the thumbs own the bottom corners, so the tanks shrink to
+		# a strip under the touch buttons and the schematic goes.
+		_compact_tanks(Vector2(20, 110), rocket)
 	# ---------------- tanks, compressor, battery (bottom left)
-	var tl := Vector2(24, vp.y - 40)
-	var rows := 2 if rocket else 1
-	var tank_h := 52.0 * rows + 100.0
-	_panel.draw(get_canvas_item(), Rect2(tl.x, tl.y - tank_h + 20, 330, tank_h))
-	if combat:
-		_hull_panel(Rect2(tl.x, tl.y - tank_h + 20 - 62, 330, 54))
-	var y := tl.y - tank_h + 48
-	_tank_row(Vector2(tl.x + 16, y), "THRUST  200 L AIR", car.thrust_tank, car.thrust_pressure_bar(), C_THRUST,
-		car.thrust_valve > 0.05, car.compressor_target == "thrust", _tank_glow.x)
-	if rocket:
-		_tank_row(Vector2(tl.x + 16, y + 52), "ROCKET  400 L AIR", car.rocket_tank, car.rocket_pressure_bar(), C_JET,
-			car.jet_output > 0.02, car.compressor_target == "rocket", _tank_glow.y)
-	var cy := y + 52.0 * rows
-	_text(Vector2(tl.x + 16, cy), "COMPRESSOR", 13, C_DIM)
-	var comp_txt := "IDLE · tanks full"
-	var comp_col := C_DIM
-	if car.compressor_lps > 0.0:
-		comp_txt = "%.1f L/s → %s%s" % [car.compressor_lps, car.compressor_target.to_upper(), "  · REGEN" if car.regen else ""]
-		comp_col = C_FAN
-	elif car.battery <= 0.02:
-		comp_txt = "NO POWER"
-		comp_col = C_WARN
-	elif car.thrust_tank < 1.0 or (rocket and car.rocket_tank < 1.0):
-		comp_txt = "PAUSED · venting"
-	_text(Vector2(tl.x + 16, cy), comp_txt, 13, comp_col, HORIZONTAL_ALIGNMENT_RIGHT, 298)
-	_text(Vector2(tl.x + 16, cy + 30), "BATTERY  200 kWh", 13, C_DIM)
-	_text(Vector2(tl.x + 16, cy + 30), "%d%%" % roundi(car.battery * 100.0), 13, C_TEXT, HORIZONTAL_ALIGNMENT_RIGHT, 298)
-	var bc := C_FAN if car.battery > 0.15 else C_WARN
-	if car.battery < 0.15 and _batt_glow <= 0.0 and int(_time * 3.0) % 2 == 0:
-		bc = C_WARN.lightened(0.3)
-	var br_rect := Rect2(tl.x + 16, cy + 40, 298, 8)
-	_bar(br_rect, car.battery, bc.lerp(Color(0.6, 0.9, 1.0), _batt_glow * 0.6))
-	if _batt_glow > 0.0:
-		draw_rect(br_rect.grow(3.0), Color(0.5, 0.85, 1.0, 0.55 * _batt_glow), false, 2.0)
-		var sx := br_rect.position.x + fmod(_time * 420.0, br_rect.size.x * clampf(car.battery, 0.05, 1.0))
-		draw_rect(Rect2(sx - 10, br_rect.position.y, 10, br_rect.size.y), Color(1, 1, 1, 0.6 * _batt_glow))
-		_text(Vector2(tl.x + 166, cy + 30), "+CHARGE", 13, Color(0.6, 0.9, 1.0, _batt_glow))
+	if not compact:
+		var tl := Vector2(24, vp.y - 40)
+		var rows := 2 if rocket else 1
+		var tank_h := 52.0 * rows + 100.0
+		_panel.draw(get_canvas_item(), Rect2(tl.x, tl.y - tank_h + 20, 330, tank_h))
+		if combat:
+			_hull_panel(Rect2(tl.x, tl.y - tank_h + 20 - 62, 330, 54))
+		var y := tl.y - tank_h + 48
+		_tank_row(Vector2(tl.x + 16, y), "THRUST  200 L AIR", car.thrust_tank, car.thrust_pressure_bar(), C_THRUST,
+			car.thrust_valve > 0.05, car.compressor_target == "thrust", _tank_glow.x)
+		if rocket:
+			_tank_row(Vector2(tl.x + 16, y + 52), "ROCKET  400 L AIR", car.rocket_tank, car.rocket_pressure_bar(), C_JET,
+				car.jet_output > 0.02, car.compressor_target == "rocket", _tank_glow.y)
+		var cy := y + 52.0 * rows
+		_text(Vector2(tl.x + 16, cy), "COMPRESSOR", 13, C_DIM)
+		var comp_txt := "IDLE · tanks full"
+		var comp_col := C_DIM
+		if car.compressor_lps > 0.0:
+			comp_txt = "%.1f L/s → %s%s" % [car.compressor_lps, car.compressor_target.to_upper(), "  · REGEN" if car.regen else ""]
+			comp_col = C_FAN
+		elif car.battery <= 0.02:
+			comp_txt = "NO POWER"
+			comp_col = C_WARN
+		elif car.thrust_tank < 1.0 or (rocket and car.rocket_tank < 1.0):
+			comp_txt = "PAUSED · venting"
+		_text(Vector2(tl.x + 16, cy), comp_txt, 13, comp_col, HORIZONTAL_ALIGNMENT_RIGHT, 298)
+		_text(Vector2(tl.x + 16, cy + 30), "BATTERY  200 kWh", 13, C_DIM)
+		_text(Vector2(tl.x + 16, cy + 30), "%d%%" % roundi(car.battery * 100.0), 13, C_TEXT, HORIZONTAL_ALIGNMENT_RIGHT, 298)
+		var bc := C_FAN if car.battery > 0.15 else C_WARN
+		if car.battery < 0.15 and _batt_glow <= 0.0 and int(_time * 3.0) % 2 == 0:
+			bc = C_WARN.lightened(0.3)
+		var br_rect := Rect2(tl.x + 16, cy + 40, 298, 8)
+		_bar(br_rect, car.battery, bc.lerp(Color(0.6, 0.9, 1.0), _batt_glow * 0.6))
+		if _batt_glow > 0.0:
+			draw_rect(br_rect.grow(3.0), Color(0.5, 0.85, 1.0, 0.55 * _batt_glow), false, 2.0)
+			var sx := br_rect.position.x + fmod(_time * 420.0, br_rect.size.x * clampf(car.battery, 0.05, 1.0))
+			draw_rect(Rect2(sx - 10, br_rect.position.y, 10, br_rect.size.y), Color(1, 1, 1, 0.6 * _batt_glow))
+			_text(Vector2(tl.x + 166, cy + 30), "+CHARGE", 13, Color(0.6, 0.9, 1.0, _batt_glow))
 
-	# ---------------- status + schematic (bottom right)
-	var br := Vector2(vp.x - 24, vp.y - 40)
-	_panel.draw(get_canvas_item(), Rect2(br.x - 330, br.y - 320, 330, 340))
-	if combat and combat.arsenal:
-		_arsenal_panel(Vector2(br.x - 330, br.y - 332))
-	_schematic(Vector2(br.x - 85, br.y - 150), 52.0)
-	var sx := br.x - 314
-	var sy := br.y - 290
-	_text(Vector2(sx, sy), "TRIM", 12, C_DIM)
-	_text(Vector2(sx + 90, sy), Car.BODIES[car.body_index].name, 12, Car.BODIES[car.body_index].accent)
-	_text(Vector2(sx, sy + 22), "ROCKET" if rocket else "THRUST", 22, C_JET if rocket else C_THRUST)
-	_text(Vector2(sx, sy + 58), "SUCTION FANS", 12, C_DIM)
-	var fan_kn: float = Car.FAN_DOWNFORCE * car.fan_spin / 1000.0
-	var fan_txt := "OFF"
-	if car.fans_on:
-		fan_txt = "PAUSED (flight)" if car.flight_mode else "ON  %.1f kN" % fan_kn
-	_text(Vector2(sx, sy + 80), fan_txt, 18, C_FAN if car.fans_on else C_DIM)
-	_text(Vector2(sx, sy + 116), "JETS", 12, C_DIM)
-	var jet_state := "—"
-	var jet_col := C_DIM
-	if rocket:
-		if car.rocket_tank <= 0.0:
-			jet_state = "EMPTY"
-			jet_col = C_WARN
-		elif car.flight_mode:
-			jet_state = "FLIGHT"
-			jet_col = C_JET
-		elif car.grounded_wheels == 0:
-			jet_state = "STABILISE"
-			jet_col = C_JET
-		elif car.jet_output > 0.02:
-			jet_state = "ASSIST"
-			jet_col = C_JET
-		else:
-			jet_state = "READY"
-			jet_col = C_TEXT
-	_text(Vector2(sx, sy + 138), jet_state, 18, jet_col)
-	_text(Vector2(sx, sy + 174), "ALTITUDE", 12, C_DIM)
-	_text(Vector2(sx, sy + 196), "%.1f m" % maxf(car.altitude, 0.0), 18)
-	_text(Vector2(sx, sy + 232), "GRIP", 12, C_DIM)
-	_bar(Rect2(sx, sy + 242, 120, 8), 1.0 - car.tyre_slip, C_FAN if car.tyre_slip < 0.3 else C_WARN)
+		# ---------------- status + schematic (bottom right)
+		var br := Vector2(vp.x - 24, vp.y - 40)
+		_panel.draw(get_canvas_item(), Rect2(br.x - 330, br.y - 320, 330, 340))
+		if combat and combat.arsenal:
+			_arsenal_panel(Vector2(br.x - 330, br.y - 332))
+		_schematic(Vector2(br.x - 85, br.y - 150), 52.0)
+		var sx := br.x - 314
+		var sy := br.y - 290
+		_text(Vector2(sx, sy), "TRIM", 12, C_DIM)
+		_text(Vector2(sx + 90, sy), Car.BODIES[car.body_index].name, 12, Car.BODIES[car.body_index].accent)
+		_text(Vector2(sx, sy + 22), "ROCKET" if rocket else "THRUST", 22, C_JET if rocket else C_THRUST)
+		_text(Vector2(sx, sy + 58), "SUCTION FANS", 12, C_DIM)
+		var fan_kn: float = Car.FAN_DOWNFORCE * car.fan_spin / 1000.0
+		var fan_txt := "OFF"
+		if car.fans_on:
+			fan_txt = "PAUSED (flight)" if car.flight_mode else "ON  %.1f kN" % fan_kn
+		_text(Vector2(sx, sy + 80), fan_txt, 18, C_FAN if car.fans_on else C_DIM)
+		_text(Vector2(sx, sy + 116), "JETS", 12, C_DIM)
+		var jet_state := "—"
+		var jet_col := C_DIM
+		if rocket:
+			if car.rocket_tank <= 0.0:
+				jet_state = "EMPTY"
+				jet_col = C_WARN
+			elif car.flight_mode:
+				jet_state = "FLIGHT"
+				jet_col = C_JET
+			elif car.grounded_wheels == 0:
+				jet_state = "STABILISE"
+				jet_col = C_JET
+			elif car.jet_output > 0.02:
+				jet_state = "ASSIST"
+				jet_col = C_JET
+			else:
+				jet_state = "READY"
+				jet_col = C_TEXT
+		_text(Vector2(sx, sy + 138), jet_state, 18, jet_col)
+		_text(Vector2(sx, sy + 174), "ALTITUDE", 12, C_DIM)
+		_text(Vector2(sx, sy + 196), "%.1f m" % maxf(car.altitude, 0.0), 18)
+		_text(Vector2(sx, sy + 232), "GRIP", 12, C_DIM)
+		_bar(Rect2(sx, sy + 242, 120, 8), 1.0 - car.tyre_slip, C_FAN if car.tyre_slip < 0.3 else C_WARN)
 
 	# ---------------- centre prompts
 	var msg := ""
@@ -317,7 +325,7 @@ func _draw() -> void:
 		msg = "BATTERY FLAT — motors limping"
 		msg2 = "grab a BATTERY pickup (cyan) · brake or coast to regen"
 	elif car.upside_down_time > 1.5:
-		msg = "Upside down — press %s to recover" % ("Menu" if _pad else "R")
+		msg = "Upside down — drag the car over, or tap ↺" if compact else "Upside down — press %s to recover" % ("Menu" if _pad else "R")
 	elif car.burnout:
 		msg = "BURNOUT"
 		msg2 = "release the brake to launch"
@@ -330,7 +338,7 @@ func _draw() -> void:
 	elif rocket and car.rocket_tank <= 0.0 and Input.is_action_pressed("lift"):
 		msg = "Rocket tank empty — compressor refilling"
 		msg2 = "brake to boost the compressor with regen"
-	elif car.can_swap_trim() and not Input.is_action_pressed("throttle"):
+	elif car.can_swap_trim() and not Input.is_action_pressed("throttle") and not compact:
 		msg = "Stopped"
 		msg2 = "T  %s trim    ·    G  switch car" % ("THRUST" if rocket else "ROCKET")
 	if msg != "":
@@ -389,7 +397,7 @@ func _draw() -> void:
 	_draw_toasts(vp)
 
 	# ---------------- help (top left)
-	if show_help:
+	if show_help and not compact:
 		var lines := HELP_PAD if _pad else HELP_KBM
 		_panel.draw(get_canvas_item(), Rect2(20, 20, 440, 30 + lines.size() * 21))
 		for i in lines.size():
@@ -469,6 +477,18 @@ static func _thousands(n: int) -> String:
 		out = "," + t.substr(t.length() - 3) + out
 		t = t.substr(0, t.length() - 3)
 	return t + out
+
+
+## Touch layout: thin thrust / rocket / battery bars, top left.
+func _compact_tanks(pos: Vector2, rocket: bool) -> void:
+	var rows := [["THRUST", car.thrust_tank, C_THRUST], ["BATTERY", car.battery, C_FAN]]
+	if rocket:
+		rows.insert(1, ["ROCKET", car.rocket_tank, C_JET])
+	_panel.draw(get_canvas_item(), Rect2(pos, Vector2(230, 14 + rows.size() * 24)))
+	for i in rows.size():
+		var y := pos.y + 24 + i * 24
+		_text(Vector2(pos.x + 12, y), rows[i][0], 12, C_DIM)
+		_bar(Rect2(pos.x + 84, y - 9, 132, 8), rows[i][1], rows[i][2])
 
 
 func _tank_row(pos: Vector2, label: String, frac: float, bar_p: float, color: Color, active: bool, filling: bool, gain := 0.0) -> void:

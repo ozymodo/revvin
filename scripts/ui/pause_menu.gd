@@ -58,7 +58,8 @@ func close() -> void:
 	Settings.save()
 	visible = false
 	get_tree().paused = false
-	Input.mouse_mode = Input.MOUSE_MODE_CAPTURED
+	if not Settings.touch_mode:
+		Input.mouse_mode = Input.MOUSE_MODE_CAPTURED
 	closed.emit()
 
 
@@ -100,9 +101,10 @@ func _build_pause() -> void:
 		close()
 		if restart_run.is_valid():
 			restart_run.call())
-	_button(v, "Quit to desktop", func() -> void:
-		Settings.save()
-		get_tree().quit())
+	if not OS.has_feature("web"):       # a browser tab can't quit itself
+		_button(v, "Quit to desktop", func() -> void:
+			Settings.save()
+			get_tree().quit())
 
 
 func _build_settings() -> void:
