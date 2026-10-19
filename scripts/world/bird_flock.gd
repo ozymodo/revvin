@@ -27,6 +27,8 @@ func _ready() -> void:
 			"spd": randf_range(0.35, 0.6) * (1.0 if randf() < 0.85 else -1.0),
 			"phase": randf() * TAU,
 		})
+	Lod.draw_distance(self, 380.0)
+	Lod.add_agent(self, 70.0)
 
 
 func _process(delta: float) -> void:

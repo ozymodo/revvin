@@ -17,6 +17,7 @@ config/features=PackedStringArray("4.5", "Forward Plus")
 
 [autoload]
 
+Lod="*res://scripts/lod.gd"
 Settings="*res://scripts/settings.gd"
 
 [display]
@@ -40,4 +41,8 @@ textures/vram_compression/import_etc2_astc=true
 car_pos={
 "type": "vec3",
 "value": Vector3(0, 0, 0)
+}
+lod_detail={
+"type": "float",
+"value": 1.0
 }

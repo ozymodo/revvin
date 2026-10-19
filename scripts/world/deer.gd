@@ -43,6 +43,8 @@ func _ready() -> void:
 	_face = _dir
 	basis = Basis.looking_at(_face, Vector3.UP).scaled(Vector3.ONE * _size)
 	add_to_group("critters")
+	Lod.draw_distance(_model, 240.0)
+	Lod.add_agent(self)
 
 
 func _process(delta: float) -> void:

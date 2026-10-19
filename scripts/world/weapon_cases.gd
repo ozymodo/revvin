@@ -20,6 +20,10 @@ const REACH := 2.8                  # car centre to nose, plus a little
 ## size: [radius, height, lowest tier, highest tier]
 const SIZES := {"small": [1.2, 1.9, 1, 2], "medium": [1.6, 2.4, 2, 3], "large": [2.1, 3.0, 3, 4]}
 
+## Draw distance of a case (scaled by the world LOD, never under DRAW_MIN).
+const DRAW := 200.0
+const DRAW_MIN := 110.0
+
 class Case:
 	var root: Node3D
 	var size := "small"
@@ -124,6 +128,10 @@ func add_case(pos: Vector3, size: String, floating: bool) -> Case:
 	add_child(c.root)
 	_build(c)
 	_fill(c)
+	# Draw distances follow the world LOD (never so short you can't spot one).
+	for mi in c.root.find_children("*", "MeshInstance3D", true, false):
+		Lod.draw_distance(mi, DRAW, 0.0, DRAW_MIN)
+	Lod.draw_distance(c.light, 100.0, 0.0, 50.0)
 	cases.append(c)
 	return c
 
@@ -224,6 +232,7 @@ func _fill(c: Case) -> void:
 	c.display = Weapons.model(c.id)
 	c.display.scale = Vector3.ONE * (2.2 + c.r * 0.5)
 	c.display.position.y = c.h * 0.45
+	Lod.draw_distance(c.display, DRAW, 0.0, DRAW_MIN)
 	c.root.add_child(c.display)
 	c.root.visible = true
 	c.active = true
@@ -259,7 +268,7 @@ func _physics_process(delta: float) -> void:
 
 func _process(delta: float) -> void:
 	for c in cases:
-		if not c.active:
+		if not c.active or not Lod.near(c.root.position, DRAW, DRAW_MIN):
 			continue
 		var t := _clock + c.phase
 		c.display.rotate_y(delta * 1.2)

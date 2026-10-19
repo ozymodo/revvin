@@ -22,6 +22,7 @@ func _ready() -> void:
 			if mat and mat.resource_name == "DroneEye":
 				_eye_mat = mat.duplicate()
 				mi.set_surface_override_material(s, _eye_mat)
+	Lod.add_agent(self, 40.0)
 
 
 func _process(delta: float) -> void:

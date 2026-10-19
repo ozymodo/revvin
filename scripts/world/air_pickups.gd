@@ -43,6 +43,10 @@ void fragment() {
 """
 
 
+## Draw distance of a pickup (scaled by the world LOD, never under DRAW_MIN).
+const DRAW := 220.0
+const DRAW_MIN := 110.0
+
 class Pickup:
 	var kind := 0
 	var home := Vector3.ZERO
@@ -194,6 +198,11 @@ func spawn(pos: Vector3, kind: int) -> Pickup:
 
 	var motes := _motes(COLORS[kind])
 	p.root.add_child(motes)
+	# Draw distances follow the world LOD (the beacon keeps its 600 m).
+	Lod.draw_distance(p.spin, DRAW, 0.0, DRAW_MIN)
+	Lod.draw_distance(p.ring, DRAW, 0.0, DRAW_MIN)
+	Lod.draw_distance(motes, 90.0)
+	Lod.draw_distance(p.light, 90.0, 0.0, 50.0)
 	items.append(p)
 	return p
 
@@ -288,7 +297,7 @@ func _physics_process(delta: float) -> void:
 
 func _process(delta: float) -> void:
 	for p in items:
-		if not p.active:
+		if not p.active or not Lod.near(p.home, DRAW, DRAW_MIN):
 			continue
 		var t := _clock + p.phase
 		p.spin.position.y = sin(t * 1.8) * 0.25
@@ -333,7 +342,7 @@ func _mesh_instance(mesh: Mesh, mat: Material) -> MeshInstance3D:
 	mi.mesh = mesh
 	mi.material_override = mat
 	mi.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
-	mi.visibility_range_end = 220.0
+	mi.visibility_range_end = DRAW
 	return mi
 
 

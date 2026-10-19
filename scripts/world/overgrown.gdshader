@@ -7,6 +7,7 @@ render_mode cull_disabled;
 
 #include "res://scripts/world/noise.gdshaderinc"
 
+global uniform float lod_detail;
 uniform vec3 base_color : source_color = vec3(0.4, 0.4, 0.38);
 uniform float panel = 3.0;
 uniform float moss_amount = 0.55;
@@ -31,10 +32,11 @@ vec2 plane_uv(vec3 w) {
 
 void fragment() {
 	vec2 uv = plane_uv(wpos);
-	float detail = 1.0 - smoothstep(80.0, 250.0, length(VERTEX));
+	float detail = 1.0 - smoothstep(80.0 * lod_detail, 250.0 * lod_detail, length(VERTEX));
 
 	vec2 cell = abs(fract(uv / panel - 0.5) - 0.5) * panel;
 	float fw = fwidth(uv.x) + 0.005;
+	float vfw = fwidth(uv.x * 0.22);
 	float seam = (1.0 - smoothstep(0.03, 0.06 + fw, min(cell.x, cell.y))) * detail;
 	float tint = hash21(floor(uv / panel));
 	vec3 col = base_color * (0.85 + 0.25 * tint) * (1.0 - seam * 0.5);
@@ -48,12 +50,19 @@ void fragment() {
 	// Vines streaking down vertical faces.
 	float vertical = 1.0 - abs(wnrm.y);
 	float column = vnoise(vec2(uv.x * 1.3, 3.0));
-	float leafy = vnoise(uv * vec2(5.0, 3.0));
-	float vines = vertical * step(0.62, column) * smoothstep(0.35, 0.6, leafy) * smoothstep(0.3, 0.6, fbm(vec2(uv.x * 0.5, uv.y * 0.12)));
+	float vines = vertical * step(0.62, column);
+	if (vines > 0.0) {
+		float leafy = vnoise(uv * vec2(5.0, 3.0));
+		vines *= smoothstep(0.35, 0.6, leafy) * smoothstep(0.3, 0.6, fbm(vec2(uv.x * 0.5, uv.y * 0.12)));
+	}
 	col = mix(col, vec3(0.14, 0.26, 0.09), vines * moss_amount * 1.4);
 
-	float ve = voronoi_edge(uv * 0.22 + 3.0);
-	float vein = (1.0 - smoothstep(0.0, 0.008 + fwidth(uv.x * 0.22), ve)) * smoothstep(1.0 - vein_amount, 1.05 - vein_amount * 0.6, fbm(uv * 0.08 + 9.0));
+	// Vein cells only where the mask lets them show.
+	float vein = smoothstep(1.0 - vein_amount, 1.05 - vein_amount * 0.6, fbm(uv * 0.08 + 9.0));
+	if (vein > 0.0) {
+		float ve = voronoi_edge(uv * 0.22 + 3.0);
+		vein *= 1.0 - smoothstep(0.0, 0.008 + vfw, ve);
+	}
 	vein = max(vein, seam * step(0.9, tint) * vein_amount * 0.6);
 	float pulse = 0.55 + 0.45 * sin(TIME * 1.7 - (wpos.x + wpos.y + wpos.z) * 0.12);
 

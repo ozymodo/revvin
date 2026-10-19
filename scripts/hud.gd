@@ -26,6 +26,10 @@ var mag: Node                       # mag.gd
 var boss: Node                      # the beast boss hunting us (world/wildlife.gd), or null
 var _boss_shown := 1.0
 var show_help: bool = Settings.get_value("show_help")
+## The help panel is static text: it lives on its own canvas item and only
+## redraws when it changes (drawing it every frame cost ~2.5 ms).
+var _help: Control
+var _help_key := []
 
 var _font: Font
 var _panel: StyleBoxFlat
@@ -106,6 +110,11 @@ func _ready() -> void:
 	_body.border_color = Color(0.6, 0.6, 0.6, 0.6)
 	_body.set_border_width_all(1)
 	_body.set_corner_radius_all(26)
+	_help = Control.new()
+	_help.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
+	_help.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	_help.draw.connect(_draw_help)
+	add_child(_help)
 
 
 func _process(delta: float) -> void:
@@ -402,15 +411,25 @@ func _draw() -> void:
 		_trick_display(vp)
 	_draw_toasts(vp)
 
-	# ---------------- help (top left)
-	if show_help and not compact:
-		var lines := HELP_PAD if _pad else HELP_KBM
-		_panel.draw(get_canvas_item(), Rect2(20, 20, 440, 30 + lines.size() * 21))
-		for i in lines.size():
-			_text(Vector2(36, 46 + i * 21), lines[i][0], 14, C_THRUST)
-			_text(Vector2(140, 46 + i * 21), lines[i][1], 14, C_TEXT)
+	# ---------------- help (top left), redrawn only when it changes
+	var help_key := [show_help and not compact, _pad, _ui]
+	if help_key != _help_key:
+		_help_key = help_key
+		_help.visible = help_key[0]
+		_help.queue_redraw()
 	if Settings.get_value("show_fps"):
 		_text(Vector2(vp.x - 90, 30), "%d fps" % roundi(_fps), 12, C_DIM)
+		if Lod.dynamic and Lod.detail < 0.995:
+			_text(Vector2(vp.x - 90, 46), "detail %d%%" % roundi(Lod.detail * 100.0), 11, C_DIM)
+
+
+func _draw_help() -> void:
+	var lines := HELP_PAD if _pad else HELP_KBM
+	_help.draw_set_transform(Vector2.ZERO, 0.0, Vector2.ONE * _ui)
+	_panel.draw(_help.get_canvas_item(), Rect2(20, 20, 440, 30 + lines.size() * 21))
+	for i in lines.size():
+		_help.draw_string(_font, Vector2(36, 46 + i * 21), lines[i][0], HORIZONTAL_ALIGNMENT_LEFT, -1, 14, C_THRUST)
+		_help.draw_string(_font, Vector2(140, 46 + i * 21), lines[i][1], HORIZONTAL_ALIGNMENT_LEFT, -1, 14, C_TEXT)
 
 
 static func _laptime(t: float) -> String:

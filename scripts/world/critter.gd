@@ -75,6 +75,12 @@ func _ready() -> void:
 	_phase = randf() * TAU
 	basis = Basis.looking_at(_face, Vector3.UP).scaled(Vector3.ONE * _size)
 	add_to_group("critters")
+	Lod.add_agent(self)
+
+
+## Lod: every frame while hunting or fighting, whatever the distance.
+func lod_awake() -> bool:
+	return hunter or _state == ANGRY
 
 
 ## Something hurt us without killing us (a slow bump): get angry.

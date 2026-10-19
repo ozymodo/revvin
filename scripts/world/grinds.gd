@@ -561,6 +561,7 @@ func _rail_mesh(r: Rail, posts: bool, post_len := -1.0) -> void:
 	post_mesh.radial_segments = 6
 	post_mesh.height = 1.0
 	var run := 0.0
+	var posts_xf: Array[Transform3D] = []
 	for i in r.pts.size():
 		if i > 0:
 			run += r.pts[i].distance_to(r.pts[i - 1])
@@ -573,12 +574,21 @@ func _rail_mesh(r: Rail, posts: bool, post_len := -1.0) -> void:
 		var h: float = top.y if post_len < 0.0 else post_len
 		if h < 0.15:
 			continue
-		var post := MeshInstance3D.new()
-		post.mesh = post_mesh
-		post.material_override = _rail_mat
-		post.scale = Vector3(1, h, 1)
-		post.position = top - Vector3.UP * h * 0.5
-		add_child(post)
+		posts_xf.append(Transform3D(Basis().scaled(Vector3(1, h, 1)), top - Vector3.UP * h * 0.5))
+	if posts_xf.is_empty():
+		return
+	# One draw call for all of a rail's posts; they drop out with distance.
+	var mm := MultiMesh.new()
+	mm.transform_format = MultiMesh.TRANSFORM_3D
+	mm.mesh = post_mesh
+	mm.instance_count = posts_xf.size()
+	for i in posts_xf.size():
+		mm.set_instance_transform(i, posts_xf[i])
+	var posts_mi := MultiMeshInstance3D.new()
+	posts_mi.multimesh = mm
+	posts_mi.material_override = _rail_mat
+	add_child(posts_mi)
+	Lod.draw_distance(posts_mi, 220.0)
 
 
 ## A thin glowing strip along the line, so grindable edges read at a glance.

@@ -8,6 +8,7 @@ shader_type spatial;
 
 #include "res://scripts/world/noise.gdshaderinc"
 
+global uniform float lod_detail;
 uniform vec3 edge_color : source_color = vec3(0.15, 0.45, 1.0);
 uniform vec3 kerb_color : source_color = vec3(1.0, 0.32, 0.08);
 uniform vec3 pad_color : source_color = vec3(0.1, 0.95, 0.35);
@@ -24,13 +25,15 @@ void fragment() {
 	float v = UV.y;
 	float across = (u - 0.5) * width_m;          // metres from the centre line
 	float edge_d = (0.5 - abs(u - 0.5)) * width_m;  // metres to the nearest edge
-	float detail = 1.0 - smoothstep(60.0, 220.0, length(VERTEX));
+	float detail = 1.0 - smoothstep(60.0 * lod_detail, 220.0 * lod_detail, length(VERTEX));
 
 	// Panels 4 m long with a slight tint each.
 	float panel_id = floor(v / 4.0);
 	float tint = hash21(vec2(panel_id, floor(u * 4.0)));
 	vec3 col = vec3(0.075, 0.08, 0.09) * (0.85 + 0.3 * tint);
-	col += (vnoise(vec2(across, v) * 3.0) - 0.5) * 0.02 * detail;
+	if (detail > 0.0) {
+		col += (vnoise(vec2(across, v) * 3.0) - 0.5) * 0.02 * detail;
+	}
 	float seam = 1.0 - smoothstep(0.02, 0.06 + fwidth(v), abs(fract(v / 4.0 + 0.5) - 0.5) * 4.0);
 	col *= 1.0 - seam * 0.35 * detail;
 

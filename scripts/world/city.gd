@@ -6,7 +6,9 @@ extends Node3D
 ##
 ## Everything keeps out of `reserved` (the stunt features and test lanes,
 ## set by level.gd) and off the avenues, so the course stays drivable.
-## Scattered meshes use MultiMesh, chunked so distant chunks cull.
+## Scattered meshes use MultiMesh, chunked so distant chunks cull, with a
+## one-draw-call stand-in further out (lod.gd); every draw distance scales
+## with the world's level of detail.
 
 const AVENUES := [-300.0, -150.0, 0.0, 150.0, 300.0]
 const AVENUE_HALF := 14.0
@@ -204,8 +206,12 @@ func _foliage_for(src: Material, sway_height: float, sway: float) -> Material:
 
 ## MultiMesh instances, grouped into square chunks that cull with distance.
 ## With a `kind`, every instance is also registered as smashable;
-## `trunks` (parallel to xforms) gives a tree's collider.
-func scatter(mesh: Mesh, xforms: Array, chunk: float, vis_end: float, shadows := true, kind := "", trunks: Array = []) -> void:
+## `trunks` (parallel to xforms) gives a tree's collider. With `near_end`,
+## each chunk swaps to a simplified one-surface copy (Lod.far_mesh) past
+## that distance; destruction.gd keeps the copy in step via the "lod_twin"
+## meta.
+func scatter(mesh: Mesh, xforms: Array, chunk: float, vis_end: float, shadows := true, kind := "", trunks: Array = [], near_end := 0.0) -> void:
+	var far: Mesh = Lod.far_mesh(mesh) if near_end > 0.0 else null
 	var groups := {}
 	for n in xforms.size():
 		var xf: Transform3D = xforms[n]
@@ -226,11 +232,26 @@ func scatter(mesh: Mesh, xforms: Array, chunk: float, vis_end: float, shadows :=
 				destructibles.append([mm, i, xf, kind, trunks[list[i]] if list[i] < trunks.size() else null])
 		var mmi := MultiMeshInstance3D.new()
 		mmi.multimesh = mm
-		mmi.visibility_range_end = vis_end
-		mmi.visibility_range_end_margin = vis_end * 0.1
 		mmi.visibility_range_fade_mode = GeometryInstance3D.VISIBILITY_RANGE_FADE_SELF
 		mmi.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_ON if shadows else GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
 		add_child(mmi)
+		if far == null:
+			Lod.draw_distance(mmi, vis_end)
+			continue
+		Lod.draw_distance(mmi, near_end)
+		var fmm := MultiMesh.new()
+		fmm.transform_format = MultiMesh.TRANSFORM_3D
+		fmm.mesh = far
+		fmm.instance_count = list.size()
+		for i in list.size():
+			fmm.set_instance_transform(i, xforms[list[i]])
+		mm.set_meta("lod_twin", fmm)
+		var fmmi := MultiMeshInstance3D.new()
+		fmmi.multimesh = fmm
+		fmmi.visibility_range_fade_mode = GeometryInstance3D.VISIBILITY_RANGE_FADE_SELF
+		fmmi.cast_shadow = mmi.cast_shadow
+		add_child(fmmi)
+		Lod.draw_distance(fmmi, vis_end, near_end)
 
 
 func _trunk(pos: Vector3, radius: float, height: float) -> CollisionShape3D:
@@ -349,16 +370,46 @@ func _holo_sign(base: Vector3, size: Vector3) -> void:
 	label.basis = Basis.looking_at(-best, Vector3.UP)
 	label.set_script(FLICKER)
 	add_child(label)
+	Lod.draw_distance(label, 400.0)
 
 
 func _skyline() -> void:
-	# Towers beyond the dome, for a city that goes on into the haze.
+	# Towers beyond the dome, for a city that goes on into the haze. All
+	# one mesh (one draw call): the building shader reads each tower's roof
+	# height and seed from UV2 instead of instance uniforms.
+	var st := SurfaceTool.new()
+	st.begin(Mesh.PRIMITIVE_TRIANGLES)
+	var box := BoxMesh.new()
+	var arrays := box.get_mesh_arrays()
+	var bv: PackedVector3Array = arrays[Mesh.ARRAY_VERTEX]
+	var bn: PackedVector3Array = arrays[Mesh.ARRAY_NORMAL]
+	var bi: PackedInt32Array = arrays[Mesh.ARRAY_INDEX]
 	for i in 120:
 		var a := rng.randf() * TAU
 		var r := rng.randf_range(700, 1000)
 		var pos := Vector3(cos(a) * r, 0, sin(a) * r)
 		var size := Vector3(rng.randf_range(20, 50), rng.randf_range(40, 220), rng.randf_range(20, 50))
-		_tower(pos, size, rng.randf() < 0.2, false)
+		var basis := Basis()
+		if rng.randf() < 0.2:
+			basis = Basis.from_euler(Vector3(rng.randf_range(-0.06, 0.06), rng.randf_range(0, TAU), rng.randf_range(-0.06, 0.06)))
+		var xf := Transform3D(basis, pos + Vector3.UP * size.y * 0.5)
+		var uv2 := Vector2(size.y, rng.randf() * 100.0)
+		for k in bi:
+			st.set_uv2(uv2)
+			st.set_normal(basis * bn[k])
+			st.add_vertex(xf * (bv[k] * size))
+	var mi := MeshInstance3D.new()
+	mi.mesh = st.commit()
+	var mat := ShaderMaterial.new()
+	var sh := Shader.new()
+	sh.code = BUILDING_SHADER.code.replace("instance uniform float roof_h = 40.0;", "varying flat float roof_h;") \
+		.replace("instance uniform float seed = 0.0;", "varying flat float seed;") \
+		.replace("instance uniform float base_y = 0.0;", "const float base_y = 0.0;") \
+		.replace("void vertex() {", "void vertex() {\n\troof_h = UV2.x;\n\tseed = UV2.y;")
+	mat.shader = sh
+	mi.material_override = mat
+	mi.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+	add_child(mi)
 
 
 func _maglev() -> void:
@@ -486,12 +537,13 @@ func _vegetation() -> void:
 			rubble.append(xf)
 	# Roof-garden trees (no trunk collider) come after the street trees in
 	# each list, so the trunk arrays line up with the first entries.
-	scatter(merged_mesh("res://assets/world/tree_broad.glb", 8.0, 0.35), trees["tree_broad"], 100.0, 650.0, true, "tree", trunks["tree_broad"])
-	scatter(merged_mesh("res://assets/world/tree_tall.glb", 12.0, 0.5), trees["tree_tall"], 100.0, 650.0, true, "tree", trunks["tree_tall"])
-	scatter(merged_mesh("res://assets/world/tree_tech.glb", 9.0, 0.2), trees["tree_tech"], 100.0, 650.0, true, "tree", trunks["tree_tech"])
-	scatter(merged_mesh("res://assets/world/bush.glb", 1.2, 0.1), bushes, 60.0, 220.0, true, "bush")
+	# Full trees out to 120 m, one-draw-call stand-ins beyond.
+	scatter(merged_mesh("res://assets/world/tree_broad.glb", 8.0, 0.35), trees["tree_broad"], 80.0, 600.0, true, "tree", trunks["tree_broad"], 120.0)
+	scatter(merged_mesh("res://assets/world/tree_tall.glb", 12.0, 0.5), trees["tree_tall"], 80.0, 600.0, true, "tree", trunks["tree_tall"], 120.0)
+	scatter(merged_mesh("res://assets/world/tree_tech.glb", 9.0, 0.2), trees["tree_tech"], 80.0, 600.0, true, "tree", trunks["tree_tech"], 120.0)
+	scatter(merged_mesh("res://assets/world/bush.glb", 1.2, 0.1), bushes, 60.0, 220.0, true, "bush", [], 70.0)
 	scatter(merged_mesh("res://assets/world/fern.glb", 0.6, 0.12), ferns, 50.0, 140.0, false, "fern")
-	scatter(merged_mesh("res://assets/world/rubble.glb", 1.0), rubble, 60.0, 250.0, true, "rock")
+	scatter(merged_mesh("res://assets/world/rubble.glb", 1.0), rubble, 60.0, 250.0, true, "rock", [], 70.0)
 
 
 func _dist_to_avenue(x: float) -> float:
@@ -509,6 +561,7 @@ func _grass() -> void:
 		var cz := -PLAY
 		while cz < PLAY:
 			var list := []
+			# Random order (Lod thins a chunk by showing a prefix of it).
 			for i in 220:
 				var x := cx + rng.randf() * chunk
 				var z := cz + rng.randf() * chunk
@@ -528,11 +581,11 @@ func _grass() -> void:
 					mm.set_instance_transform(i, list[i])
 				var mmi := MultiMeshInstance3D.new()
 				mmi.multimesh = mm
-				mmi.visibility_range_end = 150.0
-				mmi.visibility_range_end_margin = 20.0
 				mmi.visibility_range_fade_mode = GeometryInstance3D.VISIBILITY_RANGE_FADE_SELF
 				mmi.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
 				add_child(mmi)
+				Lod.draw_distance(mmi, 150.0)
+				Lod.add_grass(mmi, Vector3(cx + chunk * 0.5, 0, cz + chunk * 0.5))
 			cz += chunk
 		cx += chunk
 
@@ -589,7 +642,7 @@ func _props() -> void:
 					lamps.append(Transform3D(Basis(Vector3.UP, atan2(-arm.z, arm.x)), Vector3(x, 0, z)))
 					lamp_trunks.append(_trunk(Vector3(x, 0, z), 0.18, 6.5))
 			t += 38.0
-	scatter(merged_mesh("res://assets/world/lamp.glb", 7.0, 0.05), lamps, 120.0, 450.0, true, "lamp", lamp_trunks)
+	scatter(merged_mesh("res://assets/world/lamp.glb", 7.0, 0.05), lamps, 120.0, 450.0, true, "lamp", lamp_trunks, 130.0)
 
 	# Wrecked hover-cars at the kerbs.
 	var wreck_mesh := merged_mesh("res://assets/world/wreck.glb", 2.0, 0.1)
@@ -614,6 +667,7 @@ func _props() -> void:
 		cs.position.y = 0.6
 		body.add_child(cs)
 		add_child(body)
+		Lod.draw_distance(mi, 260.0)
 
 	# Energy pylons at some intersections.
 	var pylon_scene := load("res://assets/world/pylon.glb") as PackedScene
@@ -639,6 +693,7 @@ func _props() -> void:
 		var d := DRONE.new()
 		d.position = Vector3(x, rng.randf_range(5.0, 14.0), z)
 		add_child(d)
+		Lod.draw_distance(d, 260.0)
 
 
 ## Near an intersection: keeps lamps and wrecks out of the crossings.

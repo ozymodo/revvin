@@ -218,10 +218,8 @@ func _ceiling_light(v: Node3D, cell: int, at: Vector3, lamp: bool) -> void:
 		l.light_energy = 1.6
 		l.omni_range = 16.0
 		l.position = at + Vector3.DOWN * 0.4
-		l.distance_fade_enabled = true
-		l.distance_fade_begin = 120.0
-		l.distance_fade_length = 30.0
 		v.add_child(l)
+		Lod.draw_distance(l, 150.0)
 		v.attach(cell, l)
 
 

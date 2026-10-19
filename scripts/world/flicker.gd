@@ -7,6 +7,7 @@ var _base: Color
 
 func _ready() -> void:
 	_base = modulate
+	Lod.add_agent(self, 80.0)
 
 
 func _process(delta: float) -> void:

@@ -28,7 +28,7 @@ const DEFAULTS := {
 	"render_scale": 1.0, "upscaler": 0, "fov": 70.0, "brightness": 1.0,
 	# graphics
 	"preset": 2, "aa": 2, "shadows": 3, "ssao": true, "glow": true,
-	"volumetric_fog": true, "lod": 2,
+	"volumetric_fog": true, "lod": 2, "dynamic_lod": true,
 	# audio (0..1)
 	"master_volume": 1.0, "vehicle_volume": 1.0, "air_volume": 0.55,
 	"effects_volume": 1.0, "ambience_volume": 1.0, "mute_unfocused": true,
@@ -75,8 +75,18 @@ const MOBILE_DEFAULTS := {
 	"show_help": false,
 }
 
+## Steam Deck and other handheld PCs: Low graphics with FSR, capped at 60.
+const HANDHELD_DEFAULTS := {
+	"preset": 0, "upscaler": 1, "render_scale": 0.77, "max_fps": 2,
+}
+## Frame rate the dynamic detail aims for.
+const TARGET_FPS := 120
+const TARGET_FPS_HANDHELD := 60
+
 var values := DEFAULTS.duplicate(true)
 var testing := false
+## --bench (bench.gd): the defaults, applied, and nothing saved.
+var bench := false
 ## Set by the touch controls once they're in use: no mouse capture, and
 ## the HUD switches to its compact layout.
 var touch_mode := false
@@ -93,11 +103,16 @@ func _ready() -> void:
 	for a in OS.get_cmdline_user_args():
 		if a.begins_with("--test="):
 			testing = true
+		elif a == "--bench":
+			bench = true
 	_make_buses()
 	if is_mobile():
 		values.merge(MOBILE_DEFAULTS, true)
 		Engine.max_physics_steps_per_frame = 4    # a slow frame slows the game rather than snowballing
-	if not testing:
+	elif is_handheld():
+		values.merge(HANDHELD_DEFAULTS, true)
+		set_value("preset", values.preset)
+	if not testing and not bench:
 		_load()
 	apply_audio()
 	if not testing:
@@ -115,6 +130,32 @@ func _notification(what: int) -> void:
 ## touch switches the controls on instead).
 static func is_mobile() -> bool:
 	return OS.has_feature("web_android") or OS.has_feature("web_ios") or OS.has_feature("mobile")
+
+
+## A Steam Deck (Steam sets SteamDeck=1; the APU names cover running
+## outside Steam).
+static func is_handheld() -> bool:
+	if OS.get_environment("SteamDeck") == "1":
+		return true
+	var gpu := RenderingServer.get_video_adapter_name().to_upper()    # e.g. "AMD Custom GPU 0405 (RADV VANGOGH)"
+	return gpu.contains("CUSTOM GPU 0405") or gpu.contains("CUSTOM GPU 0932") or gpu.contains("VANGOGH") or gpu.contains("SEPHIROTH")
+
+
+## What dynamic detail aims for: 120 fps on desktop, 60 on phones and
+## handhelds, never above the frame rate limit or (with V-Sync) the
+## display's refresh rate.
+func target_fps() -> float:
+	var t := float(TARGET_FPS_HANDHELD if is_mobile() or is_handheld() else TARGET_FPS)
+	var cap: int = FPS_CAPS[clampi(int(values.max_fps), 0, FPS_CAPS.size() - 1)]
+	if cap > 0:
+		t = minf(t, cap)
+	if OS.has_feature("web") or int(values.vsync) != 0:
+		var hz := DisplayServer.screen_get_refresh_rate()
+		if hz > 1.0:
+			t = minf(t, roundf(hz))
+		elif OS.has_feature("web"):
+			t = minf(t, 60.0)
+	return t
 
 
 func get_value(key: String) -> Variant:
@@ -156,7 +197,7 @@ func _apply(key: String) -> void:
 		apply_audio()
 	elif key in ["window_mode", "resolution", "vsync", "max_fps", "render_scale", "upscaler"]:
 		apply_display()
-	elif key in GRAPHICS_KEYS or key in ["preset", "brightness"]:
+	elif key in GRAPHICS_KEYS or key in ["preset", "brightness", "dynamic_lod"]:
 		apply_graphics()
 	elif key in ["deadzone", "invert_air_pitch", "bindings"]:
 		apply_controls()
@@ -165,7 +206,7 @@ func _apply(key: String) -> void:
 # ------------------------------------------------------------------ saving
 
 func save() -> void:
-	if testing:
+	if testing or bench:
 		return
 	var cf := ConfigFile.new()
 	for k in values:
@@ -248,6 +289,7 @@ func apply_display() -> void:
 
 func _apply_render_scale() -> void:
 	Engine.max_fps = FPS_CAPS[clampi(int(values.max_fps), 0, FPS_CAPS.size() - 1)]
+	Lod.target_fps = target_fps()
 	var vp := get_viewport()
 	vp.scaling_3d_mode = [Viewport.SCALING_3D_MODE_BILINEAR, Viewport.SCALING_3D_MODE_FSR,
 		Viewport.SCALING_3D_MODE_FSR2][int(values.upscaler)]
@@ -277,11 +319,11 @@ func apply_graphics() -> void:
 		Viewport.MSAA_8X, Viewport.MSAA_DISABLED, Viewport.MSAA_2X][aa]
 	vp.screen_space_aa = Viewport.SCREEN_SPACE_AA_FXAA if aa == 1 or aa == 6 else Viewport.SCREEN_SPACE_AA_DISABLED
 	vp.use_taa = aa == 5 and values.upscaler != 2
-	vp.mesh_lod_threshold = [4.0, 2.0, 1.0, 0.5][int(values.lod)]
+	Lod.configure(int(values.lod), values.dynamic_lod)
 	var sh := int(values.shadows)
 	if sun:
 		sun.shadow_enabled = sh > 0
-		sun.directional_shadow_max_distance = [0.0, 120.0, 170.0, 220.0, 340.0][sh]
+		Lod.set_sun(sun, [0.0, 120.0, 170.0, 220.0, 340.0][sh])
 	if sh > 0:
 		RenderingServer.directional_shadow_atlas_set_size([1024, 1024, 2048, 4096, 8192][sh], true)
 		RenderingServer.directional_soft_shadow_filter_set_quality([0, RenderingServer.SHADOW_QUALITY_SOFT_VERY_LOW,

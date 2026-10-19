@@ -26,6 +26,7 @@ const Director := preload("res://scripts/enemies/director.gd")
 const PauseMenu := preload("res://scripts/ui/pause_menu.gd")
 const TouchControls := preload("res://scripts/ui/touch_controls.gd")
 const Mag := preload("res://scripts/mag.gd")
+const Bench := preload("res://scripts/bench.gd")
 const WeaponCases := preload("res://scripts/world/weapon_cases.gd")
 const Weapons := preload("res://scripts/combat/weapons.gd")
 const Wildlife := preload("res://scripts/world/wildlife.gd")
@@ -238,7 +239,7 @@ func _ready() -> void:
 		car.jet_mode = Car.JetMode.AUTO   # the scripted scenarios were written for the flight computer
 	if _jets_arg >= 0:
 		car.jet_mode = _jets_arg as Car.JetMode
-	if _test == "" and not DisplayServer.get_name() == "headless" and not OS.has_feature("web"):
+	if _test == "" and not Settings.bench and not DisplayServer.get_name() == "headless" and not OS.has_feature("web"):
 		Input.mouse_mode = Input.MOUSE_MODE_CAPTURED   # mouse looks around; Esc frees it
 
 	var skids := SkidMarks.new()
@@ -410,6 +411,10 @@ func _ready() -> void:
 	spores.target = car
 	add_child(spores)
 	add_child(Ambience.new())
+	if Settings.bench:
+		var bench := Bench.new()
+		bench.main = self
+		add_child(bench)
 
 
 ## Pickups and tricks drive the effects, sounds and HUD pop-ups.
@@ -482,7 +487,7 @@ func _unhandled_input(event: InputEvent) -> void:
 		# Esc: pause menu (resume, settings, quit).
 		get_viewport().set_input_as_handled()
 		_menu.open()
-	elif event is InputEventMouseButton and event.pressed and _test == "" and not Settings.touch_mode:
+	elif event is InputEventMouseButton and event.pressed and _test == "" and not Settings.touch_mode and not Settings.bench:
 		Input.mouse_mode = Input.MOUSE_MODE_CAPTURED
 	elif event.is_action_pressed("restart_run"):
 		course.restart()

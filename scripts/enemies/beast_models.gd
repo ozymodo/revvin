@@ -154,9 +154,8 @@ static func moss(parent: Node3D, at: Vector3, spread: float, n: int, seed: int) 
 
 static func _visible_range(root: Node3D, end: float) -> void:
 	for mi in root.find_children("*", "MeshInstance3D", true, false):
-		(mi as MeshInstance3D).visibility_range_end = end
-		(mi as MeshInstance3D).visibility_range_end_margin = end * 0.1
 		(mi as MeshInstance3D).visibility_range_fade_mode = GeometryInstance3D.VISIBILITY_RANGE_FADE_SELF
+	Lod.draw_distance(root, end)
 
 
 # ================================================================== animals

@@ -357,6 +357,28 @@ godot --headless --fixed-fps 120 --path . -- --test=course    # autopilot drives
 - **Onboard compressor**: besides the air tanks in the world and trick refills, an electric compressor draws in outside air and refills whichever tank is emptier, pausing while that tank is venting. It runs off the 200 kWh battery (40 kW). Under regenerative braking it gets the spare energy for free and runs 2.5× faster. A full refill takes about 35 s for the 200 L tank and about 70 s for the 400 L tank. Reports suggest the real car takes hours, so it's sped up for play. Tune it with `COMPRESSOR_LPS`, `REGEN_BOOST` and `COMPRESSOR_KW` in `car.gd`.
 - **Battery**: the motors draw from it and regenerative braking puts energy back. Gameplay drain and battery pickups sit on top of that (see "Air tanks and batteries").
 
+## Performance and level of detail
+
+The world gets cheaper the further it is from the camera (`scripts/lod.gd`, autoload `Lod`):
+
+- **Shaders**: the ground, buildings, overgrown surfaces and the SKYWAY road drop their fine detail with distance (cracks, grain, vines, glowing veins), and skip the expensive noise wherever it wouldn't show.
+- **Mesh tiers**: trees, bushes, rubble and lamps swap to a simplified one-draw-call stand-in past 70–130 m (every material baked into vertex colours). The skyline is one mesh, and grind-rail posts are one multimesh per rail.
+- **Draw distances**: grass, foliage, animals, drones, pickups, weapon cases, signs and lights all fade out by distance. Pickups and cases never go below 110 m, so you can still spot them.
+- **Grass density**: a full patch close by, thinning to a third at the edge of its range.
+- **Simulation**: animals, drones, bird flocks and flickering signs update every frame up close, then 30, 12 and 4 times a second further out. A fighting animal always updates every frame.
+
+Everything scales with **Level of detail** (Low 0.6×, Medium 0.8×, High 1×, Ultra 1.35×) in the graphics settings. With **Dynamic detail** on (the default), a governor watches the frame time. When frames run over budget it pulls detail in, down to half (shorter distances, earlier shader fade, a slightly shorter shadow range). It lets detail back out when there's headroom. It aims for 120 fps on desktop and 60 on phones, tablets and the Steam Deck, never above the frame-rate limit or, with V-Sync, the refresh rate. When it's below 100%, the frame-rate readout shows the current detail level. The Steam Deck is detected and starts on Low with FSR at 77%, capped at 60.
+
+Benchmark: `godot --path . --resolution 1920x1080 -- --bench [--preset=0..3] [--mobile] [--handheld] [--static] [--shots=dir]` visits five viewpoints, then drives a lap section, and prints fps, 1% lows, GPU time, draw calls, triangles and the detail level. Before → after on an i9-12900K desktop, using its RTX 4060 Ti and its Intel UHD 770 iGPU (roughly half a Steam Deck's GPU) (average fps, worst segment in brackets):
+
+| Setup | Before | After |
+|---|---|---|
+| RTX 4060 Ti, High, 1080p | 107 (99) | 315 (281) |
+| UHD 770, Steam Deck settings, 800p | 28 (21) | 40 (32) |
+| UHD 770, High, 800p | 17 (15) | 21 (17) |
+| UHD 770, web renderer, phone settings, 720p | 79 (55) | 107 (82) |
+| RTX 4060 Ti, web renderer, phone settings, 720p | 103 (86) | 312 (264) |
+
 ## Web build and GitHub Pages
 
 Every push to `main` runs `.github/workflows/pages.yml`. It exports the game with Godot 4.5.1, using the single-threaded web template so it runs on GitHub Pages without special headers, into `/play/`. It then publishes it alongside the showcase page in `site/`. To build it locally:

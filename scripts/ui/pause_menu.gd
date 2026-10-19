@@ -146,6 +146,7 @@ func _build_settings() -> void:
 	_option(tab, "Anti-aliasing", "aa", S.AA_MODES)
 	_option(tab, "Shadow quality", "shadows", S.QUALITY)
 	_option(tab, "Level of detail", "lod", S.LOD)
+	_check(tab, "Dynamic detail (holds the frame rate)", "dynamic_lod")
 	_check(tab, "Ambient occlusion (SSAO)", "ssao")
 	_check(tab, "Bloom / glow", "glow")
 	_check(tab, "Volumetric fog and light shafts", "volumetric_fog")
@@ -202,7 +203,7 @@ func _build_settings() -> void:
 
 const TAB_KEYS := {
 	"Display": ["window_mode", "resolution", "vsync", "max_fps", "render_scale", "upscaler", "fov", "brightness"],
-	"Graphics": ["preset", "aa", "shadows", "lod", "ssao", "glow", "volumetric_fog"],
+	"Graphics": ["preset", "aa", "shadows", "lod", "dynamic_lod", "ssao", "glow", "volumetric_fog"],
 	"Audio": ["master_volume", "vehicle_volume", "air_volume", "effects_volume", "ambience_volume", "mute_unfocused"],
 	"Controls": ["mouse_sens", "invert_mouse_y", "invert_air_pitch", "deadzone"],
 	"Gameplay": ["units", "camera", "shake", "show_hud", "show_help", "show_fps"],
