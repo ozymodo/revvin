@@ -16,6 +16,10 @@ const PLAY := 395.0                 # inside the boundary walls
 
 const BUILDING_SHADER := preload("res://scripts/world/building.gdshader")
 const FOLIAGE_SHADER := preload("res://scripts/world/foliage.gdshader")
+## Scattered things (trees, bushes, lamps, rubble) never draw closer in
+## than this share of their full-detail distances, however low the Level of
+## detail setting and the governor go.
+const NEAR_FLOOR := 0.6
 const GRASS_SHADER := preload("res://scripts/world/grass.gdshader")
 const OVERGROWN_SHADER := preload("res://scripts/world/overgrown.gdshader")
 const DEER := preload("res://scripts/world/deer.gd")
@@ -221,37 +225,48 @@ func scatter(mesh: Mesh, xforms: Array, chunk: float, vis_end: float, shadows :=
 		groups[key].append(n)
 	for key in groups:
 		var list: Array = groups[key]
+		# The chunk sits at its own centre: visibility ranges are measured
+		# from the node, so one at the world origin would show or hide its
+		# trees by how far the camera is from the middle of the map.
+		var centre := Vector3((key.x + 0.5) * chunk, 0.0, (key.y + 0.5) * chunk)
 		var mm := MultiMesh.new()
 		mm.transform_format = MultiMesh.TRANSFORM_3D
 		mm.mesh = mesh
 		mm.instance_count = list.size()
+		mm.set_meta("offset", centre)
 		for i in list.size():
 			var xf: Transform3D = xforms[list[i]]
-			mm.set_instance_transform(i, xf)
+			mm.set_instance_transform(i, xf.translated(-centre))
 			if kind != "":
 				destructibles.append([mm, i, xf, kind, trunks[list[i]] if list[i] < trunks.size() else null])
 		var mmi := MultiMeshInstance3D.new()
 		mmi.multimesh = mm
+		mmi.position = centre
 		mmi.visibility_range_fade_mode = GeometryInstance3D.VISIBILITY_RANGE_FADE_SELF
 		mmi.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_ON if shadows else GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
 		add_child(mmi)
 		if far == null:
-			Lod.draw_distance(mmi, vis_end)
+			Lod.draw_distance(mmi, vis_end, 0.0, vis_end * NEAR_FLOOR)
 			continue
-		Lod.draw_distance(mmi, near_end)
+		# Full detail never closer than most of near_end, whatever the
+		# setting or governor: the stand-in only ever shows past the point
+		# where its simplification can't be seen.
+		var near_min := near_end * NEAR_FLOOR
+		Lod.draw_distance(mmi, near_end, 0.0, near_min)
 		var fmm := MultiMesh.new()
 		fmm.transform_format = MultiMesh.TRANSFORM_3D
 		fmm.mesh = far
 		fmm.instance_count = list.size()
 		for i in list.size():
-			fmm.set_instance_transform(i, xforms[list[i]])
+			fmm.set_instance_transform(i, (xforms[list[i]] as Transform3D).translated(-centre))
 		mm.set_meta("lod_twin", fmm)
 		var fmmi := MultiMeshInstance3D.new()
 		fmmi.multimesh = fmm
+		fmmi.position = centre
 		fmmi.visibility_range_fade_mode = GeometryInstance3D.VISIBILITY_RANGE_FADE_SELF
 		fmmi.cast_shadow = mmi.cast_shadow
 		add_child(fmmi)
-		Lod.draw_distance(fmmi, vis_end, near_end)
+		Lod.draw_distance(fmmi, vis_end, near_end, vis_end * NEAR_FLOOR, near_min)
 
 
 func _trunk(pos: Vector3, radius: float, height: float) -> CollisionShape3D:
@@ -577,15 +592,17 @@ func _grass() -> void:
 				mm.transform_format = MultiMesh.TRANSFORM_3D
 				mm.mesh = clump
 				mm.instance_count = list.size()
+				var centre := Vector3(cx + chunk * 0.5, 0, cz + chunk * 0.5)
 				for i in list.size():
-					mm.set_instance_transform(i, list[i])
+					mm.set_instance_transform(i, (list[i] as Transform3D).translated(-centre))
 				var mmi := MultiMeshInstance3D.new()
 				mmi.multimesh = mm
+				mmi.position = centre           # see scatter
 				mmi.visibility_range_fade_mode = GeometryInstance3D.VISIBILITY_RANGE_FADE_SELF
 				mmi.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
 				add_child(mmi)
 				Lod.draw_distance(mmi, 150.0)
-				Lod.add_grass(mmi, Vector3(cx + chunk * 0.5, 0, cz + chunk * 0.5))
+				Lod.add_grass(mmi, centre)
 			cz += chunk
 		cx += chunk
 

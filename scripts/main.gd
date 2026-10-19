@@ -46,6 +46,7 @@ var wildlife: Wildlife
 var _boss_attack := ""
 var _boss: Node = null
 var _view_cam: Camera3D
+var _walk_tree := Vector3.ZERO
 var _show_at := Vector3.INF
 var _scr_worst := 0.0
 
@@ -129,6 +130,10 @@ const TESTS := {
 	# Enemies (BREAKUP=bee|roller|hopper, default all three) come at the
 	# parked car through its guns: parts shot off, how they carry on.
 	"breakup": [Vector3(-300, 0.6, 200), -PI / 2, 14.0, [3.0, 4.5, 6.0, 7.5, 9.0, 10.5, 12.0]],
+	# A camera walks up to a street tree from 220 m to 4 m (LODQ=0..3 sets
+	# the Level of detail setting, DETAIL=0.5..1 forces the governor):
+	# trees should never vanish or visibly pop on the way in.
+	"treewalk": [Vector3(-300, 0.6, 200), -PI / 2, 10.0, [1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0, 8.0, 9.0, 9.9]],
 	# One of each enemy ahead of the car; drive at them slowly, then stop.
 	"enemies": [Vector3(-300, 0.6, 200), -PI / 2, 16.0, [1.0, 2.0, 3.0, 4.0, 5.5, 6.6, 7.2, 8.5, 9.5]],
 	# A straight ram into one dummy, then a dodge front-flip into a second;
@@ -209,6 +214,8 @@ func _ready() -> void:
 		if _test != "course":
 			car.transform = Transform3D(Basis(Vector3.UP, TESTS[_test][1]), TESTS[_test][0])
 		_shot_times = TESTS[_test][3].duplicate()
+		if OS.has_environment("SHOTS"):          # SHOTS=1.5,2,2.5 overrides the times
+			_shot_times = Array(OS.get_environment("SHOTS").split_floats(","))
 	if _test == "wallride" or _test == "magwall":
 		# The tallest tower with open ground in front of one of its faces.
 		var best: Array = []
@@ -685,6 +692,32 @@ func _plan(t: float) -> Dictionary:
 			# Gun off for the first 6 s: let them come, ram what's ahead.
 			combat.arsenal.enabled = t > 6.0
 			return {"throttle": 1.0 if v < 60.0 and t < 9.0 else 0.0, "brake": 1.0 if t > 9.0 else 0.0}
+		"treewalk":
+			if _view_cam == null:
+				Lod.configure(int(OS.get_environment("LODQ")) if OS.has_environment("LODQ") else 2, false)
+				if OS.has_environment("DETAIL"):
+					Lod.detail = float(OS.get_environment("DETAIL"))
+					Lod._refresh()
+				_view_cam = Camera3D.new()
+				_view_cam.fov = 70.0
+				add_child(_view_cam)
+				_view_cam.current = true
+				# The tree nearest a spot by the avenue, walked up to along the street.
+				var best: Array = []
+				for d: Array in _level.city.destructibles:
+					if d[3] == "tree" and (best.is_empty() or (d[2] as Transform3D).origin.distance_to(Vector3(-150, 0, 120)) < (best[2] as Transform3D).origin.distance_to(Vector3(-150, 0, 120))):
+						best = d
+				_walk_tree = (best[2] as Transform3D).origin
+				print("treewalk: tree at %s  lod scale %.2f" % [_walk_tree, Lod.scale()])
+			var k := clampf((t - 0.5) / 9.0, 0.0, 1.0)
+			var dist := lerpf(220.0, 4.0, k)
+			_view_cam.global_position = _walk_tree + Vector3(1, 0, 0.3).normalized() * dist + Vector3.UP * 2.0
+			_view_cam.look_at(_walk_tree + Vector3.UP * 5.0)
+			car.global_position = _view_cam.global_position + Vector3(0, 50, 0)
+			car.freeze = true
+			if fmod(t, 0.5) < get_physics_process_delta_time():
+				print(">>> t=%.1f cam %.0f m from the tree" % [t, dist])
+			return {}
 		"breakup":
 			if t > 0.4 and t - get_physics_process_delta_time() <= 0.4:
 				var fwd: Vector3 = -car.global_basis.z

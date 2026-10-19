@@ -540,9 +540,10 @@ func _process(delta: float) -> void:
 static func _set_instance(e: Array, xf: Transform3D) -> void:
 	if e[0] is MultiMesh:
 		var mm := e[0] as MultiMesh
-		mm.set_instance_transform(e[1], xf)
+		var local := xf.translated(-(mm.get_meta("offset", Vector3.ZERO) as Vector3))   # chunk-relative (city.scatter)
+		mm.set_instance_transform(e[1], local)
 		if mm.has_meta("lod_twin"):         # its far-away stand-in (city.scatter)
-			(mm.get_meta("lod_twin") as MultiMesh).set_instance_transform(e[1], xf)
+			(mm.get_meta("lod_twin") as MultiMesh).set_instance_transform(e[1], local)
 	elif e[0] is Node3D:
 		var n := e[0] as Node3D
 		n.visible = xf.basis.x.length() > 0.001

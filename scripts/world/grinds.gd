@@ -582,10 +582,16 @@ func _rail_mesh(r: Rail, posts: bool, post_len := -1.0) -> void:
 	mm.transform_format = MultiMesh.TRANSFORM_3D
 	mm.mesh = post_mesh
 	mm.instance_count = posts_xf.size()
+	# Centred on its posts: visibility ranges are measured from the node.
+	var centre := Vector3.ZERO
+	for xf: Transform3D in posts_xf:
+		centre += xf.origin
+	centre /= posts_xf.size()
 	for i in posts_xf.size():
-		mm.set_instance_transform(i, posts_xf[i])
+		mm.set_instance_transform(i, (posts_xf[i] as Transform3D).translated(-centre))
 	var posts_mi := MultiMeshInstance3D.new()
 	posts_mi.multimesh = mm
+	posts_mi.position = centre
 	posts_mi.material_override = _rail_mat
 	add_child(posts_mi)
 	Lod.draw_distance(posts_mi, 220.0)

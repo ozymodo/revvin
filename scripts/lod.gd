@@ -43,7 +43,7 @@ var _lod_index := 2
 var _shadow_base := 0.0
 var _sun: DirectionalLight3D
 
-var _ranges: Array = []             # [node, end, begin, min_end]
+var _ranges: Array = []             # [node, end, begin, min_end, min_begin]
 var _agents: Array = []             # [node, accumulated delta, near distance]
 var _grass: Array = []              # [MultiMesh, centre, full count, shown]
 var _grass_cursor := 0
@@ -99,16 +99,18 @@ func set_sun(sun: DirectionalLight3D, max_distance: float) -> void:
 
 ## Draws `node` out to `end` metres (and from `begin`, for the far tier of a
 ## LOD pair), scaled by scale() but never under `min_end` (things the player
-## steers by). A light fades out instead. Anything else applies to every
-## GeometryInstance3D and light under it.
-func draw_distance(node: Node, end: float, begin := 0.0, min_end := 0.0) -> void:
+## steers by) or `min_begin` (the near tier's own floor, so the pair never
+## leaves a gap). A light fades out instead. Anything else applies to every
+## GeometryInstance3D and light under it. Distances are measured from the
+## node's origin, so a MultiMesh should sit in the middle of its instances.
+func draw_distance(node: Node, end: float, begin := 0.0, min_end := 0.0, min_begin := 0.0) -> void:
 	if node is GeometryInstance3D or node is Light3D:
-		_ranges.append([node, end, begin, min_end])
-		_apply_range(node, end, begin, min_end, scale())
+		_ranges.append([node, end, begin, min_end, min_begin])
+		_apply_range(node, end, begin, min_end, min_begin, scale())
 	else:
 		for n in node.find_children("*", "", true, false):
 			if n is GeometryInstance3D or n is Light3D:
-				draw_distance(n, end, begin, min_end)
+				draw_distance(n, end, begin, min_end, min_begin)
 
 
 ## Animals, drones and the like: Lod calls the node's _process itself, every
@@ -288,7 +290,7 @@ func _apply_some() -> void:
 	while _cursor < stop:
 		var r: Array = _ranges[_cursor]
 		if is_instance_valid(r[0]):
-			_apply_range(r[0], r[1], r[2], r[3], s)
+			_apply_range(r[0], r[1], r[2], r[3], r[4], s)
 		_cursor += 1
 	if _cursor >= _ranges.size():
 		_applied = s
@@ -296,7 +298,7 @@ func _apply_some() -> void:
 		_ranges = _ranges.filter(func(r: Array) -> bool: return is_instance_valid(r[0]))
 
 
-static func _apply_range(n: Node, end: float, begin: float, min_end: float, s: float) -> void:
+static func _apply_range(n: Node, end: float, begin: float, min_end: float, min_begin: float, s: float) -> void:
 	var e := maxf(end * s, min_end)
 	if n is Light3D:
 		var l := n as Light3D
@@ -309,8 +311,9 @@ static func _apply_range(n: Node, end: float, begin: float, min_end: float, s: f
 	g.visibility_range_end = e
 	g.visibility_range_end_margin = e * 0.08
 	if begin > 0.0:
-		g.visibility_range_begin = begin * s
-		g.visibility_range_begin_margin = begin * s * 0.08
+		var b := maxf(begin * s, min_begin)
+		g.visibility_range_begin = b
+		g.visibility_range_begin_margin = b * 0.08
 
 
 # ------------------------------------------------------------------ governor
