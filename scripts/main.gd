@@ -30,6 +30,7 @@ const Bench := preload("res://scripts/bench.gd")
 const WeaponCases := preload("res://scripts/world/weapon_cases.gd")
 const Weapons := preload("res://scripts/combat/weapons.gd")
 const Wildlife := preload("res://scripts/world/wildlife.gd")
+const Campaign := preload("res://scripts/campaign.gd")
 
 var car: Car
 var hud: Hud
@@ -43,6 +44,7 @@ var combat: Combat
 var director: Director
 var cases: WeaponCases
 var wildlife: Wildlife
+var campaign: Campaign
 var _boss_attack := ""
 var _boss: Node = null
 var _view_cam: Camera3D
@@ -159,6 +161,11 @@ const TESTS := {
 	# tank pickup down the lane. Prints each trick, its grade and refill.
 	"tricks": [Vector3(-300, 0.6, 200), -PI / 2, 12.0, [2.6, 4.35, 4.85, 5.3, 6.5, 8.9, 10.7]],
 	# Spawns on the SKYWAY start line; an autopilot drives the full lap.
+	# The win: every boss and the score goal set at 1 s, the nuke alarm
+	# counts down, the detonation levels the city, then MAX REVVIN.
+	"nuke": [Vector3(-300, 0.6, 200), -PI / 2, 24.0, [3.0, 10.5, 11.2, 11.8, 12.6, 14.0, 16.0, 19.0, 23.0]],
+	# Wrecked four times over: every life lost, then GAME OVER.
+	"gameover": [Vector3(-300, 0.6, 200), -PI / 2, 16.0, [3.0, 7.0, 12.0, 15.0]],
 	"course": [Vector3.ZERO, 0.0, 150.0, [1.5, 10.6, 15.2, 16.0, 21.5, 25.0, 30.0, 38.0, 50.0, 55.0, 62.8, 68.0, 72.0]],
 }
 var _ap_idx := -1
@@ -386,6 +393,27 @@ func _ready() -> void:
 		if _test == "animals" or _test == "boss":
 			wildlife.biofuel.connect(func(k: String, a: float) -> void: print(">>> t=%.2f BIOFUEL %s +%.0f%%  battery %.1f%%  at %.0f km/h" % [_t, k, a * 100.0, car.battery * 100.0, car.linear_velocity.length() * 3.6]))
 			wildlife.boss_down.connect(func(b: Node) -> void: print(">>> t=%.2f BOSS DOWN %s  (+%d)" % [_t, b.boss_name, b.points]))
+
+	# Lives, game over and the win (free play; the nuke and gameover tests).
+	if (_test == "" and not Settings.bench) or _test == "nuke" or _test == "gameover":
+		campaign = Campaign.new()
+		campaign.name = "Campaign"
+		campaign.car = car
+		campaign.combat = combat
+		campaign.tricks = tricks
+		campaign.wildlife = wildlife
+		campaign.wrecking = level.wrecking
+		campaign.fx = fx
+		campaign.hud = hud
+		campaign.cam = cam
+		campaign.world = self
+		add_child(campaign)
+		hud.campaign = campaign
+		if _test != "":
+			campaign.restart_on_input = false
+			campaign.life_lost.connect(func(n: int) -> void: print(">>> t=%.2f LIFE LOST  %d left  state %s" % [_t, n, Campaign.State.keys()[campaign.state]]))
+			campaign.alarm_started.connect(func() -> void: print(">>> t=%.2f NUKE ALARM" % _t))
+			campaign.detonated.connect(func(at: Vector3) -> void: print(">>> t=%.2f DETONATION at %s" % [_t, at.snapped(Vector3.ONE)]))
 
 	# The skatepark world: grinds drive the car on rails, hoops score.
 	level.grinds.setup(car, tricks, fx, sfx)
@@ -941,6 +969,18 @@ func _plan(t: float) -> Dictionary:
 			return {}
 		"wallride":
 			return {"throttle": 1.0, "boost": 1.0 if t < 1.0 else 0.0}
+		"nuke":
+			if t > 1.0 and campaign.state == Campaign.State.PLAYING:
+				for k in Wildlife.KINDS:
+					campaign.beaten[k] = true
+				tricks.score = Campaign.GOAL_SCORE
+			return {"throttle": 0.5 if t > 2.0 and t < 9.0 else 0.0}
+		"gameover":
+			# Hit as soon as it's back, shield or not.
+			if t > 1.0 and combat.wrecked <= 0.0:
+				combat.invuln = 0.0
+				combat.damage_player(100.0, car.global_position + Vector3.FORWARD, "test")
+			return {}
 		"tour":
 			# [car position, heading (rad)] every 1.5 s.
 			var spots := [[Vector3(560, 0.6, 210), 0.0], [Vector3(470, 86, 30), PI * 0.6], [Vector3(-150, 0.6, -400), -PI / 2],

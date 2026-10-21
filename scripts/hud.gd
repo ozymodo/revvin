@@ -24,6 +24,7 @@ var combat: Node                    # combat/combat.gd
 var director: Node                  # enemies/director.gd
 var mag: Node                       # mag.gd
 var boss: Node                      # the beast boss hunting us (world/wildlife.gd), or null
+var campaign: Node                  # campaign.gd: lives and the win (free play only)
 var _boss_shown := 1.0
 var show_help: bool = Settings.get_value("show_help")
 ## The help panel is static text: it lives on its own canvas item and only
@@ -336,6 +337,11 @@ func _draw() -> void:
 	if combat and combat.wrecked > 0.0:
 		msg = "WRECKED"
 		msg2 = "respawning…"
+		if campaign:
+			if campaign.lives <= 0:
+				msg2 = "OUT OF LIVES"
+			else:
+				msg2 = "respawning…  ·  %s" % ("LAST LIFE" if campaign.lives == 1 else "%d lives left" % campaign.lives)
 	elif car.battery < Car.LIMP_BELOW:
 		msg = "BATTERY FLAT — motors limping"
 		msg2 = "grab a BATTERY pickup (cyan) · brake or coast to regen"
@@ -618,7 +624,7 @@ func _nozzle_dot(pos: Vector2, n, color: Color, s: float) -> void:
 
 ## Session style score and the chain (top right, under the assists).
 func _style_panel(vp: Vector2) -> void:
-	var r := Rect2(vp.x - 428, 128, 404, 74)
+	var r := Rect2(vp.x - 428, 128, 404, 74 + (_OBJECTIVE_H if campaign else 0.0))
 	_panel.draw(get_canvas_item(), r)
 	_text(r.position + Vector2(16, 24), "STYLE", 12, C_DIM)
 	_text(r.position + Vector2(16, 46), _thousands(tricks.score), 30, C_TEXT)
@@ -635,6 +641,34 @@ func _style_panel(vp: Vector2) -> void:
 	if director and director.enabled:
 		counts += "   ·   THREAT %d" % director.threat
 	_text(r.position + Vector2(16, 64), counts, 11, C_DIM)
+	if campaign:
+		_objective_row(r.position + Vector2(16, 94), r.size.x - 32)
+
+
+const _OBJECTIVE_H := 30.0
+const C_LIFE := Color(1.0, 0.35, 0.3)
+
+## Lives as pips, then the win: every boss down and the GOAL score.
+func _objective_row(p: Vector2, w: float) -> void:
+	draw_line(p + Vector2(0, -20), p + Vector2(w, -20), Color(1, 1, 1, 0.08), 1.0)
+	_text(p, "LIVES", 11, C_DIM)
+	var last: bool = campaign.lives == 1
+	for i in campaign.LIVES:
+		var c := Vector2(p.x + 52 + i * 18, p.y - 4)
+		var pip := PackedVector2Array([c + Vector2(0, -6), c + Vector2(6, 0), c + Vector2(0, 6), c + Vector2(-6, 0)])
+		if i < campaign.lives:
+			var col := C_LIFE.lightened(0.35) if last and int(_time * 4.0) % 2 == 0 else C_LIFE
+			draw_colored_polygon(pip, col)
+		else:
+			pip.append(pip[0])
+			draw_polyline(pip, Color(1, 1, 1, 0.25), 1.0)
+	var n: int = campaign.beaten.size()
+	var goal: int = campaign.GOAL_SCORE
+	var bosses_c := C_FAN if n >= campaign.BOSSES else C_TEXT
+	var score_c := C_FAN if tricks.score >= goal else C_TEXT
+	_text(p, "%.1fM / %dM" % [minf(tricks.score, goal) / 1e6, roundi(goal / 1e6)], 12, score_c, HORIZONTAL_ALIGNMENT_RIGHT, w)
+	_text(p + Vector2(-110, 0), "BOSSES %d/%d" % [n, campaign.BOSSES], 12, bosses_c, HORIZONTAL_ALIGNMENT_RIGHT, w)
+	_bar(Rect2(p + Vector2(w - 100, 5), Vector2(100, 3)), float(tricks.score) / goal, score_c)
 
 
 ## What you're doing right now, then the landing grade and the pop-up.
@@ -653,10 +687,11 @@ func _drift_meter(cx: float, dy: float) -> void:
 ## doing right now, then the landing grade and the rating pop-up.
 func _trick_display(vp: Vector2) -> void:
 	var cx := vp.x - 226.0                  # centre of the STYLE panel's column
-	var y := 262.0
+	var drop := _OBJECTIVE_H if campaign else 0.0
+	var y := 262.0 + drop
 	var col_w := 400.0
 	if car.drift_points > 0.0:
-		_drift_meter(cx, 236.0)
+		_drift_meter(cx, 236.0 + drop)
 		y += 100.0
 	var age: float = tricks.clock - tricks.last_time
 	if tricks.live_name != "" and (tricks.in_air or tricks.live_points > 0) and not tricks.judging:

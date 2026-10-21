@@ -384,6 +384,23 @@ func damage_tower(body: Node, amount: float, at: Vector3, push: Vector3) -> void
 		smashed.emit("tower hit", at)
 
 
+## The nuke's shockwave: brings down up to `max_n` of the standing towers
+## whose footprint it has reached (`r` m from `at`), nearest first.
+## Returns how many came down.
+func flatten(at: Vector3, r: float, max_n: int) -> int:
+	var hit: Array = []
+	for k in _towers:
+		var t: Dictionary = _towers[k]
+		var c: Vector2 = (t.rect as Rect2).get_center()
+		var d := Vector2(at.x, at.z).distance_to(c)
+		if d < r:
+			hit.append([d, t])
+	hit.sort_custom(func(a: Array, b: Array) -> bool: return a[0] < b[0])
+	for i in mini(hit.size(), max_n):
+		_collapse(hit[i][1])
+	return mini(hit.size(), max_n)
+
+
 ## Down it comes: it sinks into its own dust, shedding voxels, and is gone.
 func _collapse(t: Dictionary) -> void:
 	var body: Node3D = t.body

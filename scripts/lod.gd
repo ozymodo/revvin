@@ -72,6 +72,18 @@ func _ready() -> void:
 	RenderingServer.global_shader_parameter_set("lod_detail", 1.0)
 
 
+## Forgets every registered node (the scene is about to be rebuilt).
+func reset() -> void:
+	_ranges.clear()
+	_agents.clear()
+	_grass.clear()
+	_grass_cursor = 0
+	_cursor = 0
+	_applying = -1.0
+	_sun = null
+	_warmup = 3.0
+
+
 func scale() -> float:
 	return quality * detail
 
@@ -218,10 +230,11 @@ func _update_agents(delta: float) -> void:
 	var i := 0
 	while i < _agents.size():
 		var a: Array = _agents[i]
-		var n: Node3D = a[0]
-		if not is_instance_valid(n):
+		# Check before the typed assignment: a freed object can't be assigned to Node3D.
+		if not is_instance_valid(a[0]):
 			_agents.remove_at(i)
 			continue
+		var n: Node3D = a[0]
 		i += 1
 		if not n.is_inside_tree() or not n.can_process():
 			continue
