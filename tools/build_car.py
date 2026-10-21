@@ -1,4 +1,4 @@
-# Generates the Mag Revvin model and exports it for Godot.
+# Generates the Max Revvin model and exports it for Godot.
 #
 #   blender --background --python tools/build_car.py -- assets/car.glb
 #

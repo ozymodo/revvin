@@ -1,4 +1,4 @@
-# Generates the overgrown-city props and wildlife for Mag Revvin.
+# Generates the overgrown-city props and wildlife for Max Revvin.
 #
 #   blender --background --python tools/build_world.py -- assets/world
 #

@@ -1,5 +1,5 @@
 extends RigidBody3D
-## Mag Revvin.
+## Max Revvin.
 ##
 ## Raycast-suspension EV with three motors (one front, two rear with torque
 ## vectoring), under-floor suction fans, four rear compressed-air thrusters

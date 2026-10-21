@@ -1,4 +1,4 @@
-# Mag Revvin
+# Max Revvin
 
 Game-jam demo of a compressed-air thruster car (Godot 4.5, Jolt physics, model built in Blender 5.2).
 
@@ -65,7 +65,7 @@ In flight, the pedals (W/S, RT/LT) tilt the car forward or back to move, and A/D
 
 ## MAG
 
-The "mag" in Mag Revvin. An electromagnet in the floor pan pulls the underside of the car toward whatever surface is below it, up to 90 m away. Hold MAG (R3, M, mouse 4, or the MAG button on touch). The physics is in `scripts/car.gd` (`_mag_pull`), and the look, sound and slam are in `scripts/mag.gd`.
+An electromagnet in the floor pan pulls the underside of the car toward whatever surface is below it, up to 90 m away. Hold MAG (R3, M, mouse 4, or the MAG button on touch). The physics is in `scripts/car.gd` (`_mag_pull`), and the look, sound and slam are in `scripts/mag.gd`.
 
 - **Getting down fast:** it reaches down the car's own axis, and if nothing is there it reaches straight down. The pull is 3g at full reach, rising to about 5g up close. It first brakes any climb, then turns the wheels to face the surface so the car lands square. A 40 m drop takes about 1.3 s instead of 2.9 s. Holding MAG also ends flight, and the jets stop cushioning the landing.
 - **Clinging to walls:** tip the floor toward a wall and the field locks onto the wall instead. Once the wheels touch, it presses them on at about 2.4g on walls, loops and ceilings, so you can sit still on a wall or drive along it. It costs about 0.4% of the battery per second.
